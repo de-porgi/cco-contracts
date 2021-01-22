@@ -3,13 +3,13 @@
 pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v3.3.0/contracts/token/ERC20/ERC20.sol";
 import "./Voting.sol";
+import "./IProjectManager.sol";
 
 /**
  * @title Project
  */
-contract Project is ERC20 {
+contract Project is Voting {
     
     struct Serie {
         uint32 Duration;
@@ -21,7 +21,6 @@ contract Project is ERC20 {
     }
     
     struct Season {
-        uint32 Duration;
         Serie[] Series;
     }
     
@@ -38,12 +37,18 @@ contract Project is ERC20 {
         Season[] Seasons;
     }
     
-    constructor (ProjectProperty memory property) ERC20(property.TokenName, property.TokenSymbol) public {
-    }
-
-    /**
+    /* 
+     * TODO:
+     * bytes4(keccak256('supportsInterface(bytes4)')) == 0x01ffc9a7
      */
-    function store(uint256 amount) payable public {
-        msg.sender.transfer(amount);
+    bytes4 private constant _INTERFACE_ID_PROJECT_MANAGER = 0x01ffc9a7;
+    
+    address public Owner;
+    address public ProjectManager;
+    
+    constructor (ProjectProperty memory property, address projectManager) Voting(property.TokenName, property.TokenSymbol) public {
+        Owner = msg.sender;
+        ProjectManager = projectManager;
+        IProjectManager(projectManager).supportsInterface(_INTERFACE_ID_PROJECT_MANAGER);
     }
 }
