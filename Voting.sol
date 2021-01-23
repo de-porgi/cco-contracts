@@ -2,7 +2,7 @@
 
 pragma solidity >=0.6.0;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v3.3.0/contracts/token/ERC20/ERC20.sol";
+import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/ERC20.sol";
 
 
 library Uint256Helpers {
