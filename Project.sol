@@ -57,13 +57,15 @@ contract Project is Voting {
         _DepositManager = WETHGateway(_DEPOSIT_ADDRESS);
         IProjectManager(projectManager).supportsInterface(_INTERFACE_ID_PROJECT_MANAGER);
     }
+	
+	receive() external payable {}
     
-    function _make_deposit(uint256 amount) private {
+    function _makeDeposit(uint256 amount) private {
         require(address(this).balance >= amount, "Not Enough ETH to Deposit");
         _DepositManager.depositETH{value: amount}(address(this), 0);
     }
     
-    function _withdraw_deposit(uint256 amount) private {
+    function _withdrawDeposit(uint256 amount) private {
         ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
         require(aWETH.approve(_DEPOSIT_ADDRESS, amount), "Not Enough aWETH to Withdraw");
         _DepositManager.withdrawETH(amount, address(this));
