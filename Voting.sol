@@ -97,7 +97,8 @@ contract Voting is ERC20 {
             } else if (property.Filters[i].Schema == VoteSchema.PercentAbsolute) {
                 positive = positive && ((CurrentPoll.TotalYes / property.Filters[i].Value) > (totalSupply() / 100));
             } else if (property.Filters[i].Schema == VoteSchema.DifferenceOfVotes) {
-                positive = positive && ((CurrentPoll.TotalYes - CurrentPoll.TotalNo) > property.Filters[i].Value);
+                positive = positive && (CurrentPoll.TotalYes >= CurrentPoll.TotalNo) 
+				    && ((CurrentPoll.TotalYes - CurrentPoll.TotalNo) > property.Filters[i].Value);
             }
         }
         
