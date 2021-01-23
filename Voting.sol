@@ -77,7 +77,8 @@ contract Voting is ERC20 {
     }
     
     function Withdraw(uint256 amount) public {
-        transferFrom(address(this), msg.sender, amount);
+        // It will transfer money from name of contract
+        this.transfer(msg.sender, amount);
     }
     
     function _startPoll(VoteProperty storage property) internal virtual {
@@ -132,9 +133,6 @@ contract Voting is ERC20 {
         } else {
             CurrentPoll.TotalNo = CurrentPoll.TotalNo.add(amount);
         }
-        
-        // Sets ability to return tokens back from contract
-        _approve(address(this), sender, votes[sender].Weight);
     }
     
     function _unlock(address sender, uint256 amount) internal {

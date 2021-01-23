@@ -47,7 +47,7 @@ contract Project is Voting {
     address public ProjectManager;
     
     constructor (ProjectProperty memory property, address projectManager) Voting(property.TokenName, property.TokenSymbol) public {
-        Owner = msg.sender;
+        Owner = tx.origin;
         ProjectManager = projectManager;
         IProjectManager(projectManager).supportsInterface(_INTERFACE_ID_PROJECT_MANAGER);
     }

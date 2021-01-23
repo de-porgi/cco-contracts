@@ -25,4 +25,16 @@ contract Porgi is ERC165, IProjectManager {
     function GetProjects(address owner) public view returns (address[] memory ownedProjects) {
         ownedProjects = Projects[owner];
     }
+    
+    function Help() public view returns (address) {
+        return msg.sender;
+    }
+    
+    function HelpHelp() public view returns (address) {
+        return Help();
+    }
+    
+    function HelpThis() public view returns (address) {
+        return this.Help();
+    }
 }
