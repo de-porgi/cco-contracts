@@ -4,37 +4,29 @@ pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
 import "./Project.sol";
-import "./IProjectManager.sol";
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v3.3.0/contracts/introspection/ERC165.sol";
+import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
 
 /**
  * @title Project
  */
-contract Porgi is ERC165, IProjectManager {
+contract Porgi {
     
-    mapping(address => address[]) public Projects;
+    mapping(address => Project[]) public Projects;
+    
+    MiniMeTokenFactory private _Factory;
+    
+    constructor() public {
+        _Factory = new MiniMeTokenFactory();
+    }
 
     /**
      */
-    function AddProject(Project.ProjectProperty memory property) public returns (address newProject) {
-        Project c = new Project(property, address(this));
-        newProject = address(c);
+    function AddProject(Project.ProjectProperty memory property) public returns (Project newProject) {
+        newProject = new Project(property, this, _Factory);
         Projects[msg.sender].push(newProject);
     }
     
-    function GetProjects(address owner) public view returns (address[] memory ownedProjects) {
+    function GetProjectsBy(address owner) public view returns (Project[] memory ownedProjects) {
         ownedProjects = Projects[owner];
-    }
-    
-    function Help() public view returns (address) {
-        return msg.sender;
-    }
-    
-    function HelpHelp() public view returns (address) {
-        return Help();
-    }
-    
-    function HelpThis() public view returns (address) {
-        return this.Help();
     }
 }

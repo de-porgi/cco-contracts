@@ -4,12 +4,16 @@ pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
 import "./Voting.sol";
-import "./IProjectManager.sol";
+import "./Porgi.sol";
+
+import "https://github.com/aave/protocol-v2/blob/master/contracts/misc/WETHGateway.sol";
+import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
+import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/ERC20.sol";
 
 /**
  * @title Project
  */
-contract Project is Voting {
+contract Project is MiniMeToken {
     
     struct Serie {
         uint32 Duration;
@@ -28,27 +32,49 @@ contract Project is Voting {
         string ProjectName;
         string TokenName;
         string TokenSymbol;
-        uint32 Decimal;
+        uint8 TokenDecimal;
         // How many tokens for one ether TODO: Maybe add in future support of different currencies
         uint256 TokenPrice;
         // Percent of tokens which will be created for owner of the project during mint process
         uint8 OwnerTokensPercent;
+        uint64 PresaleDuration;
         
         Season[] Seasons;
     }
     
-    /* 
-     * TODO:
-     * bytes4(keccak256('supportsInterface(bytes4)')) == 0x01ffc9a7
-     */
-    bytes4 private constant _INTERFACE_ID_PROJECT_MANAGER = 0x01ffc9a7;
+    address payable private constant _DEPOSIT_ADDRESS = 0xf8aC10E65F2073460aAD5f28E1EABE807DC287CF;
     
     address public Owner;
-    address public ProjectManager;
+    Porgi private _Porgi;
+    WETHGateway private _DepositManager;
     
-    constructor (ProjectProperty memory property, address projectManager) Voting(property.TokenName, property.TokenSymbol) public {
+    constructor (ProjectProperty memory property, Porgi porgi, MiniMeTokenFactory factory) 
+        MiniMeToken(
+            factory,
+            MiniMeToken(address(0)),
+            0 /* _parentSnapShotBlock */,
+            property.TokenName,
+            property.TokenDecimal,
+            property.TokenSymbol,
+            true /* _transfersEnabled */) public {
+        
         Owner = tx.origin;
-        ProjectManager = projectManager;
-        IProjectManager(projectManager).supportsInterface(_INTERFACE_ID_PROJECT_MANAGER);
+        _Porgi = porgi;
+        _DepositManager = WETHGateway(_DEPOSIT_ADDRESS);
+        // Anyone can't controll this units TODO: Do we need permissions to controll units by Porgi?
+        changeController(address(this));
+    }
+    
+  	receive() external payable {}
+    
+    function _makeDeposit(uint256 amount) private {
+        require(address(this).balance >= amount, "Not Enough ETH to Deposit");
+        _DepositManager.depositETH{value: amount}(address(this), 0);
+    }
+    
+    function _withdrawDeposit(uint256 amount) private {
+        ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
+        require(aWETH.approve(_DEPOSIT_ADDRESS, amount), "Not Enough aWETH to Withdraw");
+        _DepositManager.withdrawETH(amount, address(this));
     }
 }
