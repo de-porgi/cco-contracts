@@ -2,7 +2,7 @@
 
 pragma solidity >=0.6.0;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v3.3.0/contracts/token/ERC20/ERC20.sol";
+import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/ERC20.sol";
 
 
 library Uint256Helpers {
@@ -97,7 +97,8 @@ contract Voting is ERC20 {
             } else if (property.Filters[i].Schema == VoteSchema.PercentAbsolute) {
                 positive = positive && ((CurrentPoll.TotalYes / property.Filters[i].Value) > (totalSupply() / 100));
             } else if (property.Filters[i].Schema == VoteSchema.DifferenceOfVotes) {
-                positive = positive && ((CurrentPoll.TotalYes - CurrentPoll.TotalNo) > property.Filters[i].Value);
+                positive = positive && (CurrentPoll.TotalYes >= CurrentPoll.TotalNo) 
+				    && ((CurrentPoll.TotalYes - CurrentPoll.TotalNo) > property.Filters[i].Value);
             }
         }
         
