@@ -73,6 +73,7 @@ contract Project is MiniMeToken, Time {
         uint64 Start;
         int8 ActiveSeries;
         SeriesStruct[] Series;
+        uint8 StakePercentsLeft;
     }
 
     enum ProjectState {
@@ -136,12 +137,12 @@ contract Project is MiniMeToken, Time {
 
     function FinishPresale() external onlyHolder {
         require(State() == ProjectState.PresaleFinishing);
-        // TODO: Unlock units
+        Season memory curSeason = Seasons[ActiveSeason];
+        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock, curSeason.StakePercentsLeft);
         _startNextSeries();
     }
 
     function _startNextSeries() private {
-
     }
 
     function State() public view returns (ProjectState) {
@@ -185,12 +186,12 @@ contract Project is MiniMeToken, Time {
     }
 
   	receive() external payable {}
-    
+
     function _makeDeposit(uint256 amount) private {
         require(address(this).balance >= amount, "Not Enough ETH to Deposit");
         _DepositManager.depositETH{value: amount}(address(this), 0);
     }
-    
+
     function _withdrawDeposit(uint256 amount) private {
         ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
         require(aWETH.approve(_DEPOSIT_ADDRESS, amount), "Not Enough aWETH to Withdraw");
@@ -211,6 +212,7 @@ contract Project is MiniMeToken, Time {
             totalPercent += _season.Series[i].StakeUnlock;
         }
         require(totalPercent == 100, "Project: total stake percent must be 100");
+        season.StakePercentsLeft = 100;
     }
 
     function _addSeries(Season storage _season, InitSeries memory _series, bool last) private {
@@ -229,8 +231,7 @@ contract Project is MiniMeToken, Time {
     }
 
     function withdrawETH() public payable {
-        // project is closed TODO Add corresponding variable
-        require(false, "Project Is Not Closed");
+        require(State() == ProjectState.ProjectCanceled, "Project Is Not Canceled");
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
@@ -249,5 +250,10 @@ contract Project is MiniMeToken, Time {
         uint256 toUnlock = balance.mul(numerator).div(denominator);
         _withdrawDeposit(toUnlock);
         _safeTransferETH(Owner, toUnlock);
+    }
+
+    function Invest() public payable {
+        uint256 tokensToEmit = Seasons[ActiveSeason].Presale.Price.mul(msg.value).mul(10 ** (decimals - 18));
+        require(generateTokens(msg.sender, tokensToEmit), "Error During Tokens Emission");
     }
 }
