@@ -14,6 +14,7 @@ contract Voting is Time {
     using SafeMath for uint256;
     
     modifier onlyProject { require(msg.sender == address(_Project), "Voring: sender is not Project"); _; }
+    modifier onlyHolder { require(_Project.balanceOf(msg.sender) > 0, "Project: sender is not holder"); _; }
     
     uint8 constant PercentAbsolute = 1;
     uint8 constant PercentParticipant = 2;
@@ -32,7 +33,7 @@ contract Voting is Time {
     
     enum VoteType { NONE, NO, YES }
     
-    enum VoteResult { None, Positive, Negative, Canceled }
+    enum VoteResult { None, Positive, Negative }
     
     uint64 public TimestampStart;
     uint256 public BlockStart;
@@ -57,7 +58,8 @@ contract Voting is Time {
         }
     }
     
-    function Start() external onlyProject {
+    function Start() external onlyHolder {
+        require(_Project.CurrentVoting() == this, "Voting: Is not current voting");
         require(BlockStart == 0, "Voting: Already started");
         require(Result == VoteResult.None, "Voting: Already has result");
         TimestampStart = getTimestamp64();
@@ -67,10 +69,10 @@ contract Voting is Time {
     
     function Cancel() external onlyProject {
         require(Result == VoteResult.None, "Voting: Already has result");
-        Result = VoteResult.Canceled;
+        selfdestruct(address(_Project));
     }
     
-    function Finish() external {
+    function Finish() external onlyHolder {
         require(Result == VoteResult.None, "Voting: Already has result");
         require(TimestampStart != 0, "Voting: Is not started");
         require(!IsOpen(), "Voting: In progress");
@@ -91,9 +93,11 @@ contract Voting is Time {
         } else {
             Result = VoteResult.Negative;
         }
+        
+        _Project.FinishSeries();
     }
     
-    function Vote(VoteType t) external {
+    function Vote(VoteType t) external onlyHolder {
         require(IsOpen(), "Voting: In progress");
         require(t == VoteType.NO || t == VoteType.YES, "Voting: unknown vote type");
         
