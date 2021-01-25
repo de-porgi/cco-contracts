@@ -277,6 +277,7 @@ contract Project is MiniMeToken, Time {
         uint256 senderTokens = balanceOf(msg.sender);
         uint256 ETHToWithdraw =  totalEth.mul(senderTokens).div(totalSupply);
         destroyTokens(msg.sender, senderTokens);
+        _withdrawDeposit(toUnlock);
         _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
