@@ -220,7 +220,8 @@ contract Project is MiniMeToken, Time {
         if (msg.sender != _DEPOSIT_ADDRESS) {
             require(State() == ProjectState.PresaleInProgress, "Presale Finished");
             uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
-            uint256 ownerTokens = investorTokens.mul(Seasons[ActiveSeason].Presale.OwnerPercent).div(100);
+            uint256 ownerPercent = Seasons[ActiveSeason].Presale.OwnerPercent;
+            uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
             _mint(msg.sender, investorTokens);
             _mint(Owner, ownerTokens);
         }
