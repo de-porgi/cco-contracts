@@ -81,7 +81,7 @@ contract Project is MiniMeToken {
         _DepositManager.withdrawETH(amount, address(this));
     }
 	
-	    function GetETHBalance() public view returns (uint256) {
+	function GetETHBalance() public view returns (uint256) {
         ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
         return aWETH.balanceOf(address(this));
     }
