@@ -7,7 +7,7 @@ import "./Project.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
 
 /**
- * @title Project
+ * @title Porgi
  */
 contract Porgi {
     
@@ -21,12 +21,12 @@ contract Porgi {
 
     /**
      */
-    function AddProject(Project.ProjectProperty memory property) public returns (Project newProject) {
+    function AddProject(Project.InitProjectProperty memory property) external returns (Project newProject) {
         newProject = new Project(property, this, _Factory);
         Projects[msg.sender].push(newProject);
     }
     
-    function GetProjectsBy(address owner) public view returns (Project[] memory ownedProjects) {
+    function GetProjectsBy(address owner) external view returns (Project[] memory ownedProjects) {
         ownedProjects = Projects[owner];
     }
 }
