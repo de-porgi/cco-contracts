@@ -21,6 +21,7 @@ contract Project is MiniMeToken, Time {
 
     modifier onlyOwner { require(msg.sender == address(Owner), "Project: sender is not owner"); _; }
     modifier onlyHolder { require(balanceOf(msg.sender) > 0, "Project: sender is not holder"); _; }
+    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting()), "Project: sender is not current voting"); _; }
 
     struct InitSeries {
         uint64 Duration;
@@ -70,7 +71,6 @@ contract Project is MiniMeToken, Time {
 
     struct Season {
         TokenPresale Presale;
-        uint64 Start;
         int8 ActiveSeries;
         SeriesStruct[] Series;
         uint8 StakePercentsLeft;
@@ -115,8 +115,6 @@ contract Project is MiniMeToken, Time {
         require(property.TokenDecimal >= 18, "Project: decimal can't be lower than eth decimal");
         require(property.Presale.TokenPrice >= 10**18, "Project: price can't be lower than decimal");
 
-        // TODO: Support more than one season
-        require(property.Seasons.length == 1, "Project: It is test contract so we only allow one season");
         for (uint8 i = 0; i < property.Seasons.length; ++i) {
             _addSeason(property.Presale, property.Seasons[i]);
         }
@@ -141,8 +139,27 @@ contract Project is MiniMeToken, Time {
         _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock, curSeason.StakePercentsLeft);
         _startNextSeries();
     }
+    
+    function FinishSeries() external onlyCurrentVoting {
+        Voting.VoteResult result = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote.Result();
+        require(result == Voting.VoteResult.Negative || result == Voting.VoteResult.Positive, "Project: Incorrect voting result");
 
-    function _startNextSeries() private {
+        if (result == Voting.VoteResult.Negative) {
+            // Cleanup future votings, because project is canceled
+            for (uint j = ActiveSeason; j < Seasons.length; ++j) {
+                for (uint8 i = uint8(Seasons[j].ActiveSeries + 1); i < Seasons[j].Series.length; ++i) {
+                    Seasons[j].Series[i].Vote.Cancel();
+                }
+            }
+        } else {
+            // TODO: Unlock units for current series
+            _startNextSeries();
+        }
+    }
+
+    function StartNextSeason() external onlyOwner {
+        require(State() == ProjectState.SeasonFinishing);
+        ++ActiveSeason;
     }
 
     function State() public view returns (ProjectState) {
@@ -175,7 +192,7 @@ contract Project is MiniMeToken, Time {
 
                     if (result == Voting.VoteResult.None) {
                         return ProjectState.NextSeriesVotingFinishing;
-                    } else if (result == Voting.VoteResult.Negative || result == Voting.VoteResult.Canceled) {
+                    } else if (result == Voting.VoteResult.Negative) {
                         return ProjectState.ProjectCanceled;
                     } else {
                         return ProjectState.Unknown;
@@ -185,7 +202,24 @@ contract Project is MiniMeToken, Time {
         }
     }
 
+    function CurrentVoting() public view returns (Voting) {
+        if (State() == ProjectState.SeasonFinishing) {
+            return Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote;
+        } else {
+            return Voting(0);
+        }
+    }
+
   	receive() external payable {}
+
+    function _startNextSeries() private {
+        ProjectState state = State();
+        require(state == ProjectState.PresaleFinishing || state == ProjectState.NextSeriesVotingFinishing);
+        ++Seasons[ActiveSeason].ActiveSeries;
+        SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
+        series.Start = getTimestamp64();
+        require(State() == ProjectState.SeriesInProgress);
+    }
 
     function _makeDeposit(uint256 amount) private {
         require(address(this).balance >= amount, "Not Enough ETH to Deposit");
@@ -219,7 +253,7 @@ contract Project is MiniMeToken, Time {
         SeriesStruct storage series = _season.Series.push();
         series.Duration = _series.Duration;
         series.StakeUnlock = _series.StakeUnlock;
-        // We don't need voting for the latest Series, because we have already unlocked all tokens for season 1=)
+        // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
         if (!last) {
             series.Vote = new Voting(this, _series.Vote);
         }
