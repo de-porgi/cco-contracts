@@ -106,6 +106,6 @@ contract Project is MiniMeToken {
         uint256 balance = GetETHBalance();
         uint256 toUnlock = balance.mul(numerator).div(denominator);
         _withdrawDeposit(toUnlock);
-        _safeTransferETH(msg.sender, toUnlock);
+        _safeTransferETH(Owner, toUnlock);
     }
 }
