@@ -133,17 +133,17 @@ contract Project is MiniMeToken, Time {
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
     }
 
-    function _unlockUnitsForNextSeries() private {
-        Season memory curSeason = Seasons[ActiveSeason];
-        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries + 1)].StakeUnlock, curSeason.StakePercentsLeft);
-        Seasons[ActiveSeason].StakePercentsLeft -= curSeason.Series[uint8(curSeason.ActiveSeries + 1)].StakeUnlock;
+    function _unlockUnitsForCurrentSeries() private {
+        Season storage curSeason = Seasons[ActiveSeason];
+        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock, curSeason.StakePercentsLeft);
+        Seasons[ActiveSeason].StakePercentsLeft -= curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock;
     }
 
     function FinishPresale() external onlyHolder {
         require(State() == ProjectState.PresaleFinishing);
         _makeDeposit(address(this).balance);
-        _unlockUnitsForNextSeries();
         _startNextSeries();
+        _unlockUnitsForCurrentSeries();
     }
 
     function FinishSeries() external onlyCurrentVoting {
@@ -158,8 +158,8 @@ contract Project is MiniMeToken, Time {
                 }
             }
         } else {
-            _unlockUnitsForNextSeries();
             _startNextSeries();
+            _unlockUnitsForCurrentSeries();
         }
     }
 
@@ -216,7 +216,15 @@ contract Project is MiniMeToken, Time {
         }
     }
 
-  	receive() external payable {}
+  	receive() external payable {
+        if (msg.sender != _DEPOSIT_ADDRESS) {
+            require(State() == ProjectState.PresaleInProgress, "Presale Finished");
+            uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
+            uint256 ownerTokens = investorTokens.mul(Seasons[ActiveSeason].Presale.OwnerPercent).div(100);
+            _mint(msg.sender, investorTokens);
+            _mint(Owner, ownerTokens);
+        }
+    }
 
     function _startNextSeries() private {
         ProjectState state = State();
@@ -270,14 +278,14 @@ contract Project is MiniMeToken, Time {
         return aWETH.balanceOf(address(this));
     }
 
-    function withdrawETH() public payable {
+    function withdrawETH() public {
         require(State() == ProjectState.ProjectCanceled, "Project Is Not Canceled");
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
         uint256 ETHToWithdraw =  totalEth.mul(senderTokens).div(totalSupply);
-        destroyTokens(msg.sender, senderTokens);
-        _withdrawDeposit(toUnlock);
+        _burn(msg.sender, senderTokens);
+        _withdrawDeposit(ETHToWithdraw);
         _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
@@ -291,10 +299,5 @@ contract Project is MiniMeToken, Time {
         uint256 toUnlock = balance.mul(numerator).div(denominator);
         _withdrawDeposit(toUnlock);
         _safeTransferETH(Owner, toUnlock);
-    }
-
-    function Invest() public payable {
-        uint256 tokensToEmit = Seasons[ActiveSeason].Presale.Price.mul(msg.value).mul(uint256(10) ** (decimals - 18));
-        require(generateTokens(msg.sender, tokensToEmit), "Error During Tokens Emission");
     }
 }
