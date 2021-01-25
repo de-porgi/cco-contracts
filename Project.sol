@@ -133,13 +133,18 @@ contract Project is MiniMeToken, Time {
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
     }
 
+    function _unlockUnitsForNextSeries() private {
+        Season memory curSeason = Seasons[ActiveSeason];
+        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries + 1)].StakeUnlock, curSeason.StakePercentsLeft);
+        Seasons[ActiveSeason].StakePercentsLeft -= curSeason.Series[uint8(curSeason.ActiveSeries + 1)].StakeUnlock;
+    }
+
     function FinishPresale() external onlyHolder {
         require(State() == ProjectState.PresaleFinishing);
-        Season memory curSeason = Seasons[ActiveSeason];
-        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock, curSeason.StakePercentsLeft);
+        _unlockUnitsForNextSeries();
         _startNextSeries();
     }
-    
+
     function FinishSeries() external onlyCurrentVoting {
         Voting.VoteResult result = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote.Result();
         require(result == Voting.VoteResult.Negative || result == Voting.VoteResult.Positive, "Project: Incorrect voting result");
@@ -152,7 +157,7 @@ contract Project is MiniMeToken, Time {
                 }
             }
         } else {
-            // TODO: Unlock units for current series
+            _unlockUnitsForNextSeries();
             _startNextSeries();
         }
     }
@@ -287,7 +292,7 @@ contract Project is MiniMeToken, Time {
     }
 
     function Invest() public payable {
-        uint256 tokensToEmit = Seasons[ActiveSeason].Presale.Price.mul(msg.value).mul(10 ** (decimals - 18));
+        uint256 tokensToEmit = Seasons[ActiveSeason].Presale.Price.mul(msg.value).mul(uint256(10) ** (decimals - 18));
         require(generateTokens(msg.sender, tokensToEmit), "Error During Tokens Emission");
     }
 }
