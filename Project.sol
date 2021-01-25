@@ -141,6 +141,7 @@ contract Project is MiniMeToken, Time {
 
     function FinishPresale() external onlyHolder {
         require(State() == ProjectState.PresaleFinishing);
+        _makeDeposit(address(this).balance);
         _unlockUnitsForNextSeries();
         _startNextSeries();
     }
