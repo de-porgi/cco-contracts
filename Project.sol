@@ -9,8 +9,8 @@ import "./Time.sol";
 
 import "https://github.com/aave/protocol-v2/blob/master/contracts/misc/WETHGateway.sol";
 import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
+import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
-import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/ERC20.sol";
 
 /**
  * @title Project
@@ -19,9 +19,12 @@ contract Project is MiniMeToken, Time {
 
     using SafeMath for uint256;
 
-    modifier onlyOwner { require(msg.sender == address(Owner), "Project: sender is not owner"); _; }
-    modifier onlyHolder { require(balanceOf(msg.sender) > 0, "Project: sender is not holder"); _; }
-    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting()), "Project: sender is not current voting"); _; }
+    // Sender is not owner
+    modifier onlyOwner { require(msg.sender == address(Owner)); _; }
+    // Sender is not holder
+    modifier onlyHolder { require(balanceOf(msg.sender) > uint256(0)); _; }
+    // Sender is not current voting
+    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting())); _; }
 
     struct InitSeries {
         uint64 Duration;
@@ -72,8 +75,8 @@ contract Project is MiniMeToken, Time {
     struct Season {
         TokenPresale Presale;
         int8 ActiveSeries;
-        SeriesStruct[] Series;
         uint8 StakePercentsLeft;
+        SeriesStruct[] Series;
     }
 
     enum ProjectState {
@@ -96,8 +99,8 @@ contract Project is MiniMeToken, Time {
     string public ProjectName;
     address public Owner;
 
-    uint8 public ActiveSeason;
-    Season[] public Seasons;
+    uint8 private ActiveSeason;
+    Season[] private Seasons;
 
     Porgi private _Porgi;
     WETHGateway private _DepositManager;
@@ -112,11 +115,35 @@ contract Project is MiniMeToken, Time {
             property.TokenSymbol,
             true /* _transfersEnabled */) public {
 
-        require(property.TokenDecimal >= 18, "Project: decimal can't be lower than eth decimal");
-        require(property.Presale.TokenPrice >= 10**18, "Project: price can't be lower than decimal");
+        // Decimal can't be lower than eth decimal
+        require(property.TokenDecimal >= 18);
+        // Price lower than ether
+        require(property.Presale.TokenPrice >= 1 ether);
 
         for (uint8 i = 0; i < property.Seasons.length; ++i) {
-            _addSeason(property.Presale, property.Seasons[i]);
+            require(property.Presale.OwnerTokensPercent < 100);
+            Season storage season = Seasons.push();
+            season.Presale.OwnerPercent = property.Presale.OwnerTokensPercent;
+            season.Presale.Price = property.Presale.TokenPrice;
+            season.Presale.Duration = property.Presale.Duration;
+            season.ActiveSeries = -1;
+    
+            uint8 totalPercent = 0;
+            for (uint8 j = 0; j < property.Seasons[i].Series.length; ++j) {
+                // Stake unlock more 100
+                require(property.Seasons[i].Series[j].StakeUnlock <= 100);
+                SeriesStruct storage series = Seasons[i].Series.push();
+                series.Duration = property.Seasons[i].Series[j].Duration;
+                series.StakeUnlock = property.Seasons[i].Series[j].StakeUnlock;
+                // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
+                if ((j + 1) != property.Seasons[i].Series.length) {
+                    series.Vote = new Voting(this, property.Seasons[i].Series[j].Vote);
+                }
+                totalPercent += property.Seasons[i].Series[j].StakeUnlock;
+            }
+            // Total stake percent must be 100
+            require(totalPercent == 100);
+            season.StakePercentsLeft = 100;
         }
         ActiveSeason = 0;
 
@@ -133,12 +160,6 @@ contract Project is MiniMeToken, Time {
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
     }
 
-    function _unlockUnitsForCurrentSeries() private {
-        Season storage curSeason = Seasons[ActiveSeason];
-        _unlockETH(curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock, curSeason.StakePercentsLeft);
-        Seasons[ActiveSeason].StakePercentsLeft -= curSeason.Series[uint8(curSeason.ActiveSeries)].StakeUnlock;
-    }
-
     function FinishPresale() external onlyHolder {
         require(State() == ProjectState.PresaleFinishing);
         _makeDeposit(address(this).balance);
@@ -146,14 +167,11 @@ contract Project is MiniMeToken, Time {
         _unlockUnitsForCurrentSeries();
     }
 
-    function FinishSeries() external onlyCurrentVoting {
-        Voting.VoteResult result = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote.Result();
-        require(result == Voting.VoteResult.Negative || result == Voting.VoteResult.Positive, "Project: Incorrect voting result");
-
+    function FinishSeries(Voting.VoteResult result) external onlyCurrentVoting {
         if (result == Voting.VoteResult.Negative) {
             // Cleanup future votings, because project is canceled
             for (uint j = ActiveSeason; j < Seasons.length; ++j) {
-                for (uint8 i = uint8(Seasons[j].ActiveSeries + 1); i < Seasons[j].Series.length; ++i) {
+                for (uint8 i = uint8(Seasons[j].ActiveSeries + 1); i + 1 < Seasons[j].Series.length; ++i) {
                     Seasons[j].Series[i].Vote.Cancel();
                 }
             }
@@ -165,11 +183,23 @@ contract Project is MiniMeToken, Time {
 
     function StartNextSeason() external onlyOwner {
         require(State() == ProjectState.SeasonFinishing);
-        ++ActiveSeason;
+        ActiveSeason = ActiveSeason + 1;
+    }
+
+    function WithdrawETH() external onlyHolder {
+        // Project Is Not Canceled
+        require(State() == ProjectState.ProjectCanceled);
+        uint256 totalEth = GetETHBalance();
+        uint256 totalSupply = totalSupply();
+        uint256 senderTokens = balanceOf(msg.sender);
+        uint256 ETHToWithdraw =  totalEth.mul(senderTokens).div(totalSupply);
+        _burn(msg.sender, senderTokens);
+        _withdrawDeposit(ETHToWithdraw);
+        _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
     function State() public view returns (ProjectState) {
-        if (Seasons[ActiveSeason].ActiveSeries <= 0) {
+        if (Seasons[ActiveSeason].ActiveSeries < 0) {
             if (Seasons[ActiveSeason].Presale.Start == 0) {
                 return ProjectState.PresaleIsNotStarted;
             } else if (getTimestamp64() < Seasons[ActiveSeason].Presale.Start + Seasons[ActiveSeason].Presale.Duration) {
@@ -209,16 +239,26 @@ contract Project is MiniMeToken, Time {
     }
 
     function CurrentVoting() public view returns (Voting) {
-        if (State() == ProjectState.SeasonFinishing) {
+        if (State() == ProjectState.SeriesFinishing || State() == ProjectState.NextSeriesVotingInProgress || State() == ProjectState.NextSeriesVotingFinishing) {
             return Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote;
         } else {
             return Voting(0);
         }
     }
 
+    function GetSeason(uint8 season) external view returns (Season memory) {
+        return Seasons[season];
+    }
+
+	function GetETHBalance() public view returns (uint256) {
+        IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
+        return aWETH.balanceOf(address(this));
+    }
+
   	receive() external payable {
         if (msg.sender != _DEPOSIT_ADDRESS) {
-            require(State() == ProjectState.PresaleInProgress, "Presale Finished");
+            // Presale Finished
+            require(State() == ProjectState.PresaleInProgress);
             uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
             uint256 ownerPercent = Seasons[ActiveSeason].Presale.OwnerPercent;
             uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
@@ -227,78 +267,41 @@ contract Project is MiniMeToken, Time {
         }
     }
 
+    function _mint(address _owner, uint _amount) internal override {
+        Seasons[ActiveSeason].Presale.TotalGenerated = Seasons[ActiveSeason].Presale.TotalGenerated.add(_amount);
+        super._mint(_owner, _amount);
+    }
+
     function _startNextSeries() private {
-        ProjectState state = State();
-        require(state == ProjectState.PresaleFinishing || state == ProjectState.NextSeriesVotingFinishing);
-        ++Seasons[ActiveSeason].ActiveSeries;
+        Seasons[ActiveSeason].ActiveSeries = Seasons[ActiveSeason].ActiveSeries + 1;
         SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
         series.Start = getTimestamp64();
         require(State() == ProjectState.SeriesInProgress);
     }
 
+    function _unlockUnitsForCurrentSeries() private {
+        uint256 balance = GetETHBalance();
+        uint256 toUnlock = balance.mul(Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].StakeUnlock).div(Seasons[ActiveSeason].StakePercentsLeft);
+        _withdrawDeposit(toUnlock);
+        _safeTransferETH(Owner, toUnlock);
+        Seasons[ActiveSeason].StakePercentsLeft = Seasons[ActiveSeason].StakePercentsLeft - Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].StakeUnlock;
+    }
+
     function _makeDeposit(uint256 amount) private {
-        require(address(this).balance >= amount, "Not Enough ETH to Deposit");
+        // Not Enough ETH to Deposit
+        require(address(this).balance >= amount);
         _DepositManager.depositETH{value: amount}(address(this), 0);
     }
 
     function _withdrawDeposit(uint256 amount) private {
-        ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
-        require(aWETH.approve(_DEPOSIT_ADDRESS, amount), "Not Enough aWETH to Withdraw");
+        IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
+        // Not Enough aWETH to Withdraw
+        require(aWETH.approve(_DEPOSIT_ADDRESS, amount));
         _DepositManager.withdrawETH(amount, address(this));
-    }
-
-    function _addSeason(InitPresale memory _presale, InitSeason memory _season) private {
-        Season storage season = Seasons.push();
-        season.Presale.OwnerPercent = _presale.OwnerTokensPercent;
-        season.Presale.Price = _presale.TokenPrice;
-        season.Presale.Duration = _presale.Duration;
-        season.ActiveSeries = -1;
-
-        uint8 totalPercent = 0;
-        for (uint8 i = 0; i < _season.Series.length; ++i) {
-            _addSeries(season, _season.Series[i], (i + 1) == _season.Series.length);
-            require(_season.Series[i].StakeUnlock <= 100, "Project: stake unlock more than 100");
-            totalPercent += _season.Series[i].StakeUnlock;
-        }
-        require(totalPercent == 100, "Project: total stake percent must be 100");
-        season.StakePercentsLeft = 100;
-    }
-
-    function _addSeries(Season storage _season, InitSeries memory _series, bool last) private {
-        SeriesStruct storage series = _season.Series.push();
-        series.Duration = _series.Duration;
-        series.StakeUnlock = _series.StakeUnlock;
-        // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
-        if (!last) {
-            series.Vote = new Voting(this, _series.Vote);
-        }
-    }
-
-	function GetETHBalance() public view returns (uint256) {
-        ERC20 aWETH = ERC20(_DepositManager.getAWETHAddress());
-        return aWETH.balanceOf(address(this));
-    }
-
-    function withdrawETH() public {
-        require(State() == ProjectState.ProjectCanceled, "Project Is Not Canceled");
-        uint256 totalEth = GetETHBalance();
-        uint256 totalSupply = totalSupply();
-        uint256 senderTokens = balanceOf(msg.sender);
-        uint256 ETHToWithdraw =  totalEth.mul(senderTokens).div(totalSupply);
-        _burn(msg.sender, senderTokens);
-        _withdrawDeposit(ETHToWithdraw);
-        _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
     function _safeTransferETH(address to, uint256 value) private {
         (bool success, ) = to.call{value: value}(new bytes(0));
-        require(success, 'ETH_TRANSFER_FAILED');
-    }
-
-    function _unlockETH(uint8 numerator, uint8 denominator) private {
-        uint256 balance = GetETHBalance();
-        uint256 toUnlock = balance.mul(numerator).div(denominator);
-        _withdrawDeposit(toUnlock);
-        _safeTransferETH(Owner, toUnlock);
+        require(success);
     }
 }
