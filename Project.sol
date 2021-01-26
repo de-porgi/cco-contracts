@@ -250,12 +250,12 @@ contract Project is MiniMeToken, Time {
         return Seasons[season];
     }
 
-	function GetETHBalance() public view returns (uint256) {
+    function GetETHBalance() public view returns (uint256) {
         IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
         return aWETH.balanceOf(address(this));
     }
 
-  	receive() external payable {
+    receive() external payable {
         if (msg.sender != _DEPOSIT_ADDRESS) {
             // Presale Finished
             require(State() == ProjectState.PresaleInProgress);
