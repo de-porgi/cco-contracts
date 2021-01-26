@@ -19,12 +19,9 @@ contract Project is MiniMeToken, Time {
 
     using SafeMath for uint256;
 
-    // Sender is not owner
-    modifier onlyOwner { require(msg.sender == address(Owner)); _; }
-    // Sender is not holder
-    modifier onlyHolder { require(balanceOf(msg.sender) > uint256(0)); _; }
-    // Sender is not current voting
-    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting())); _; }
+    modifier onlyOwner { require(msg.sender == address(Owner), "Project: Sender is not owner"); _; }
+    modifier onlyHolder { require(balanceOf(msg.sender) > uint256(0), "Project: Sender is not holder"); _; }
+    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting()), "Project: Sender is not current voting"); _; }
 
     struct InitSeries {
         uint64 Duration;
@@ -93,9 +90,6 @@ contract Project is MiniMeToken, Time {
         ProjectCanceled
     }
     
-    // It is address in Kovan testnet.
-    address payable private constant _DEPOSIT_ADDRESS = 0xf8aC10E65F2073460aAD5f28E1EABE807DC287CF;
-    
     string public ProjectName;
     address public Owner;
 
@@ -104,10 +98,11 @@ contract Project is MiniMeToken, Time {
 
     Porgi private _Porgi;
     WETHGateway private _DepositManager;
+    VotingSimpleFactory private _VotingFactory;
     
-    constructor (InitProjectProperty memory property, Porgi porgi, MiniMeTokenFactory factory)
+    constructor (InitProjectProperty memory property, Porgi porgi)
         MiniMeToken(
-            factory,
+            porgi.TokenFactory(),
             MiniMeToken(address(0)) /* _parentToken */,
             0 /* _parentSnapShotBlock */,
             property.TokenName,
@@ -115,10 +110,17 @@ contract Project is MiniMeToken, Time {
             property.TokenSymbol,
             true /* _transfersEnabled */) public {
 
-        // Decimal can't be lower than eth decimal
-        require(property.TokenDecimal >= 18);
-        // Price lower than ether
-        require(property.Presale.TokenPrice >= 1 ether);
+        require(property.TokenDecimal >= 18, "Project: Decimal can't be lower than eth decimal");
+        require(property.Presale.TokenPrice >= 1 ether, "Project: Price lower than ether");
+        
+        ActiveSeason = 0;
+        ProjectName = property.ProjectName;
+        Owner = tx.origin;
+        _Porgi = porgi;
+        _DepositManager = porgi.AaveWETHGateway();
+        _VotingFactory = porgi.VotingFactory();
+        // Anyone can't controll this units TODO: Do we need permissions to controll units by Porgi?
+        changeController(address(this));
 
         for (uint8 i = 0; i < property.Seasons.length; ++i) {
             require(property.Presale.OwnerTokensPercent < 100);
@@ -130,34 +132,25 @@ contract Project is MiniMeToken, Time {
     
             uint8 totalPercent = 0;
             for (uint8 j = 0; j < property.Seasons[i].Series.length; ++j) {
-                // Stake unlock more 100
-                require(property.Seasons[i].Series[j].StakeUnlock <= 100);
+                require(property.Seasons[i].Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
                 SeriesStruct storage series = Seasons[i].Series.push();
                 series.Duration = property.Seasons[i].Series[j].Duration;
                 series.StakeUnlock = property.Seasons[i].Series[j].StakeUnlock;
                 // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
                 if ((j + 1) != property.Seasons[i].Series.length) {
-                    series.Vote = new Voting(this, property.Seasons[i].Series[j].Vote);
+                    series.Vote = _VotingFactory.CreateVoting(this, property.Seasons[i].Series[j].Vote);
                 }
                 totalPercent += property.Seasons[i].Series[j].StakeUnlock;
             }
-            // Total stake percent must be 100
-            require(totalPercent == 100);
+            require(totalPercent == 100, "Project: Total stake percent must be 100");
             season.StakePercentsLeft = 100;
         }
-        ActiveSeason = 0;
-
-        ProjectName = property.ProjectName;
-        Owner = tx.origin;
-        _Porgi = porgi;
-        _DepositManager = WETHGateway(_DEPOSIT_ADDRESS);
-        // Anyone can't controll this units TODO: Do we need permissions to controll units by Porgi?
-        changeController(address(this));
     }
     
     function StartPresale() external onlyOwner {
         require(State() == ProjectState.PresaleIsNotStarted);
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
+        _Porgi.ChangeState(Porgi.ProjectState.Presale);
     }
 
     function FinishPresale() external onlyHolder {
@@ -165,6 +158,7 @@ contract Project is MiniMeToken, Time {
         _makeDeposit(address(this).balance);
         _startNextSeries();
         _unlockUnitsForCurrentSeries();
+        _Porgi.ChangeState(Porgi.ProjectState.InProgress);
     }
 
     function FinishSeries(Voting.VoteResult result) external onlyCurrentVoting {
@@ -175,6 +169,7 @@ contract Project is MiniMeToken, Time {
                     Seasons[j].Series[i].Vote.Cancel();
                 }
             }
+            _Porgi.ChangeState(Porgi.ProjectState.Canceled);
         } else {
             _startNextSeries();
             _unlockUnitsForCurrentSeries();
@@ -187,8 +182,7 @@ contract Project is MiniMeToken, Time {
     }
 
     function WithdrawETH() external onlyHolder {
-        // Project Is Not Canceled
-        require(State() == ProjectState.ProjectCanceled);
+        require(State() == ProjectState.ProjectCanceled, "Project: Is Not Canceled");
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
@@ -246,6 +240,10 @@ contract Project is MiniMeToken, Time {
         }
     }
 
+    function GetSeasons() external view returns (Season[] memory) {
+        return Seasons;
+    }
+
     function GetSeason(uint8 season) external view returns (Season memory) {
         return Seasons[season];
     }
@@ -256,9 +254,8 @@ contract Project is MiniMeToken, Time {
     }
 
     receive() external payable {
-        if (msg.sender != _DEPOSIT_ADDRESS) {
-            // Presale Finished
-            require(State() == ProjectState.PresaleInProgress);
+        if (msg.sender != address(_DepositManager)) {
+            require(State() == ProjectState.PresaleInProgress, "Project: Presale not in progress");
             uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
             uint256 ownerPercent = Seasons[ActiveSeason].Presale.OwnerPercent;
             uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
@@ -277,6 +274,10 @@ contract Project is MiniMeToken, Time {
         SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
         series.Start = getTimestamp64();
         require(State() == ProjectState.SeriesInProgress);
+        // We started latest series in project, so we can mark it as finished
+        if (ActiveSeason + 1 == uint8(Seasons.length) && Seasons[ActiveSeason].ActiveSeries + 1 == int8(Seasons[ActiveSeason].Series.length)) {
+            _Porgi.ChangeState(Porgi.ProjectState.Finished);
+        }
     }
 
     function _unlockUnitsForCurrentSeries() private {
@@ -288,20 +289,28 @@ contract Project is MiniMeToken, Time {
     }
 
     function _makeDeposit(uint256 amount) private {
-        // Not Enough ETH to Deposit
-        require(address(this).balance >= amount);
+        require(address(this).balance >= amount, "Project: Not Enough ETH to Deposit");
         _DepositManager.depositETH{value: amount}(address(this), 0);
     }
 
     function _withdrawDeposit(uint256 amount) private {
         IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
-        // Not Enough aWETH to Withdraw
-        require(aWETH.approve(_DEPOSIT_ADDRESS, amount));
+        // TODO: I think approve always returns tru, so this check is obvious
+        require(aWETH.approve(address(_DepositManager), amount), "Project: Not Enough aWETH to Withdraw");
         _DepositManager.withdrawETH(amount, address(this));
     }
 
     function _safeTransferETH(address to, uint256 value) private {
         (bool success, ) = to.call{value: value}(new bytes(0));
         require(success);
+    }
+}
+
+/**
+ * @title ProjectSimpleFactory
+ */
+contract ProjectSimpleFactory {
+    function CreateProject(Project.InitProjectProperty memory property, Porgi porgi) external returns (Project) {
+        return new Project(property, porgi);
     }
 }
