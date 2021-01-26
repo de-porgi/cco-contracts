@@ -71,10 +71,10 @@ contract Porgi {
         return _ProjectStatistic[project];
     }
     
-    function _changeState(Project proejct, ProjectState newState) private {
-        Statistic storage stat = _ProjectStatistic[proejct];
+    function _changeState(Project project, ProjectState newState) private {
+        Statistic storage stat = _ProjectStatistic[project];
         require(stat.State != newState, "Porgi: state didn't change");
-        require(_IndexedProjectsByState[stat.State][stat.Index] == proejct, "Porgi: index mismatchs");
+        require(_IndexedProjectsByState[stat.State][stat.Index] == project, "Porgi: index mismatchs");
         
         if ((stat.Index + 1) != uint32(_IndexedProjectsByState[stat.State].length)) {
             // If we don't last project, then let's swap with last project
@@ -86,6 +86,6 @@ contract Porgi {
         _IndexedProjectsByState[stat.State].pop();
         stat.State = newState;
         stat.Index = uint32(_IndexedProjectsByState[newState].length);
-        _IndexedProjectsByState[newState].push(proejct);
+        _IndexedProjectsByState[newState].push(project);
     }
 }

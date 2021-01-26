@@ -20,7 +20,7 @@ contract Project is MiniMeToken, Time {
     using SafeMath for uint256;
 
     modifier onlyOwner { require(msg.sender == address(Owner), "Project: Sender is not owner"); _; }
-    modifier onlyHolder { require(balanceOf(msg.sender) > uint256(0), "Project: Sender is not holder"); _; }
+    modifier onlyHolder { require(msg.sender == Owner || balanceOf(msg.sender) > uint256(0), "Project: Sender is not holder"); _; }
     modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting()), "Project: Sender is not current voting"); _; }
 
     struct InitSeries {
@@ -89,7 +89,7 @@ contract Project is MiniMeToken, Time {
         ProjectFinished,
         ProjectCanceled
     }
-
+    
     string public ProjectName;
     address public Owner;
 
@@ -99,7 +99,7 @@ contract Project is MiniMeToken, Time {
     Porgi private _Porgi;
     WETHGateway private _DepositManager;
     VotingSimpleFactory private _VotingFactory;
-
+    
     constructor (InitProjectProperty memory property, Porgi porgi)
         MiniMeToken(
             porgi.TokenFactory(),
@@ -112,7 +112,7 @@ contract Project is MiniMeToken, Time {
 
         require(property.TokenDecimal >= 18, "Project: Decimal can't be lower than eth decimal");
         require(property.Presale.TokenPrice >= 1 ether, "Project: Price lower than ether");
-
+        
         ActiveSeason = 0;
         ProjectName = property.ProjectName;
         Owner = tx.origin;
@@ -129,7 +129,7 @@ contract Project is MiniMeToken, Time {
             season.Presale.Price = property.Presale.TokenPrice;
             season.Presale.Duration = property.Presale.Duration;
             season.ActiveSeries = -1;
-
+    
             uint8 totalPercent = 0;
             for (uint8 j = 0; j < property.Seasons[i].Series.length; ++j) {
                 require(property.Seasons[i].Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
@@ -146,7 +146,7 @@ contract Project is MiniMeToken, Time {
             season.StakePercentsLeft = 100;
         }
     }
-
+    
     function StartPresale() external onlyOwner {
         require(State() == InnerProjectState.PresaleIsNotStarted);
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
@@ -186,6 +186,7 @@ contract Project is MiniMeToken, Time {
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
+        require(senderTokens > 0, "Project: Zero balance");
         uint256 ETHToWithdraw =  totalEth.mul(senderTokens).div(totalSupply);
         _burn(msg.sender, senderTokens);
         _withdrawDeposit(ETHToWithdraw);
@@ -233,8 +234,8 @@ contract Project is MiniMeToken, Time {
     }
 
     function CurrentVoting() public view returns (Voting) {
-        if (State() == InnerProjectState.SeriesFinishing
-         || State() == InnerProjectState.NextSeriesVotingInProgress
+        if (State() == InnerProjectState.SeriesFinishing 
+         || State() == InnerProjectState.NextSeriesVotingInProgress 
          || State() == InnerProjectState.NextSeriesVotingFinishing) {
             return Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote;
         } else {
