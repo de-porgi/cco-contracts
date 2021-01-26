@@ -76,7 +76,7 @@ contract Project is MiniMeToken, Time {
         SeriesStruct[] Series;
     }
 
-    enum ProjectState {
+    enum InnerProjectState {
         Unknown,
         PresaleIsNotStarted,
         PresaleInProgress,
@@ -89,7 +89,7 @@ contract Project is MiniMeToken, Time {
         ProjectFinished,
         ProjectCanceled
     }
-    
+
     string public ProjectName;
     address public Owner;
 
@@ -99,7 +99,7 @@ contract Project is MiniMeToken, Time {
     Porgi private _Porgi;
     WETHGateway private _DepositManager;
     VotingSimpleFactory private _VotingFactory;
-    
+
     constructor (InitProjectProperty memory property, Porgi porgi)
         MiniMeToken(
             porgi.TokenFactory(),
@@ -112,7 +112,7 @@ contract Project is MiniMeToken, Time {
 
         require(property.TokenDecimal >= 18, "Project: Decimal can't be lower than eth decimal");
         require(property.Presale.TokenPrice >= 1 ether, "Project: Price lower than ether");
-        
+
         ActiveSeason = 0;
         ProjectName = property.ProjectName;
         Owner = tx.origin;
@@ -129,7 +129,7 @@ contract Project is MiniMeToken, Time {
             season.Presale.Price = property.Presale.TokenPrice;
             season.Presale.Duration = property.Presale.Duration;
             season.ActiveSeries = -1;
-    
+
             uint8 totalPercent = 0;
             for (uint8 j = 0; j < property.Seasons[i].Series.length; ++j) {
                 require(property.Seasons[i].Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
@@ -146,15 +146,15 @@ contract Project is MiniMeToken, Time {
             season.StakePercentsLeft = 100;
         }
     }
-    
+
     function StartPresale() external onlyOwner {
-        require(State() == ProjectState.PresaleIsNotStarted);
+        require(State() == InnerProjectState.PresaleIsNotStarted);
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
         _Porgi.ChangeState(Porgi.ProjectState.Presale);
     }
 
     function FinishPresale() external onlyHolder {
-        require(State() == ProjectState.PresaleFinishing);
+        require(State() == InnerProjectState.PresaleFinishing);
         _makeDeposit(address(this).balance);
         _startNextSeries();
         _unlockUnitsForCurrentSeries();
@@ -177,12 +177,12 @@ contract Project is MiniMeToken, Time {
     }
 
     function StartNextSeason() external onlyOwner {
-        require(State() == ProjectState.SeasonFinishing);
+        require(State() == InnerProjectState.SeasonFinishing);
         ActiveSeason = ActiveSeason + 1;
     }
 
     function WithdrawETH() external onlyHolder {
-        require(State() == ProjectState.ProjectCanceled, "Project: Is Not Canceled");
+        require(State() == InnerProjectState.ProjectCanceled, "Project: Is Not Canceled");
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
@@ -192,40 +192,40 @@ contract Project is MiniMeToken, Time {
         _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
-    function State() public view returns (ProjectState) {
+    function State() public view returns (InnerProjectState) {
         if (Seasons[ActiveSeason].ActiveSeries < 0) {
             if (Seasons[ActiveSeason].Presale.Start == 0) {
-                return ProjectState.PresaleIsNotStarted;
+                return InnerProjectState.PresaleIsNotStarted;
             } else if (getTimestamp64() < Seasons[ActiveSeason].Presale.Start + Seasons[ActiveSeason].Presale.Duration) {
-                return ProjectState.PresaleInProgress;
+                return InnerProjectState.PresaleInProgress;
             } else {
-                return ProjectState.PresaleFinishing;
+                return InnerProjectState.PresaleFinishing;
             }
         } else {
             SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
 
             if (getTimestamp64() < series.Start + series.Duration) {
-                return ProjectState.SeriesInProgress;
+                return InnerProjectState.SeriesInProgress;
             } else if (uint8(Seasons[ActiveSeason].ActiveSeries + 1) == Seasons[ActiveSeason].Series.length /* last series in season */) {
                 if (ActiveSeason + 1 == Seasons.length /* last season */) {
-                    return ProjectState.ProjectFinished;
+                    return InnerProjectState.ProjectFinished;
                 } else {
-                    return ProjectState.SeasonFinishing;
+                    return InnerProjectState.SeasonFinishing;
                 }
             } else {
                 if (series.Vote.TimestampStart() == 0) {
-                    return ProjectState.SeriesFinishing;
+                    return InnerProjectState.SeriesFinishing;
                 } else if (series.Vote.IsOpen()) {
-                    return ProjectState.NextSeriesVotingInProgress;
+                    return InnerProjectState.NextSeriesVotingInProgress;
                 } else {
                     Voting.VoteResult result = series.Vote.Result();
 
                     if (result == Voting.VoteResult.None) {
-                        return ProjectState.NextSeriesVotingFinishing;
+                        return InnerProjectState.NextSeriesVotingFinishing;
                     } else if (result == Voting.VoteResult.Negative) {
-                        return ProjectState.ProjectCanceled;
+                        return InnerProjectState.ProjectCanceled;
                     } else {
-                        return ProjectState.Unknown;
+                        return InnerProjectState.Unknown;
                     }
                 }
             }
@@ -233,7 +233,9 @@ contract Project is MiniMeToken, Time {
     }
 
     function CurrentVoting() public view returns (Voting) {
-        if (State() == ProjectState.SeriesFinishing || State() == ProjectState.NextSeriesVotingInProgress || State() == ProjectState.NextSeriesVotingFinishing) {
+        if (State() == InnerProjectState.SeriesFinishing
+         || State() == InnerProjectState.NextSeriesVotingInProgress
+         || State() == InnerProjectState.NextSeriesVotingFinishing) {
             return Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote;
         } else {
             return Voting(0);
@@ -255,7 +257,7 @@ contract Project is MiniMeToken, Time {
 
     receive() external payable {
         if (msg.sender != address(_DepositManager)) {
-            require(State() == ProjectState.PresaleInProgress, "Project: Presale not in progress");
+            require(State() == InnerProjectState.PresaleInProgress, "Project: Presale not in progress");
             uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
             uint256 ownerPercent = Seasons[ActiveSeason].Presale.OwnerPercent;
             uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
@@ -273,7 +275,7 @@ contract Project is MiniMeToken, Time {
         Seasons[ActiveSeason].ActiveSeries = Seasons[ActiveSeason].ActiveSeries + 1;
         SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
         series.Start = getTimestamp64();
-        require(State() == ProjectState.SeriesInProgress);
+        require(State() == InnerProjectState.SeriesInProgress);
         // We started latest series in project, so we can mark it as finished
         if (ActiveSeason + 1 == uint8(Seasons.length) && Seasons[ActiveSeason].ActiveSeries + 1 == int8(Seasons[ActiveSeason].Series.length)) {
             _Porgi.ChangeState(Porgi.ProjectState.Finished);
