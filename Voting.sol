@@ -14,7 +14,7 @@ contract Voting is Time {
     using SafeMath for uint256;
     
     modifier onlyProject { require(msg.sender == address(_Project), "Voting: Sender is not Project"); _; }
-    modifier onlyHolder { require(msg.sender == _Owner || _Project.balanceOf(msg.sender) > 0, "Voting: Sender is not holder"); _; }
+    modifier onlyHolder { require(msg.sender == _Project.Owner() || _Project.balanceOf(msg.sender) > 0, "Voting: Sender is not holder"); _; }
     
     uint8 constant PercentAbsolute = 1;
     uint8 constant PercentParticipant = 2;
@@ -33,7 +33,7 @@ contract Voting is Time {
     
     enum VoteType { NONE, NO, YES }
     
-    enum VoteResult { None, Positive, Negative }
+    enum VoteResult { None, Negative, Positive }
     
     uint64 public TimestampStart;
     uint256 public BlockStart;
@@ -46,11 +46,9 @@ contract Voting is Time {
     mapping(address => VoteType) public Votes;
     Project private _Project;
     VoteProperty private _Property;
-    address private _Owner;
     
     constructor (Project prj, VoteProperty memory property) public {
         _Project = prj;
-        _Owner = prj.Owner();
         _Property.Duration = property.Duration;
         require(property.Filters.length > 0, "Voting: Zero filters");
         uint8 temp = 0;
