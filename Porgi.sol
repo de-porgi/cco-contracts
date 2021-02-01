@@ -31,13 +31,17 @@ contract Porgi {
     ProjectSimpleFactory public ProjectFactory;
     
     // AaveGateWay in Kovan testnet 0xf8aC10E65F2073460aAD5f28E1EABE807DC287CF;
-    WETHGateway public AaveWETHGateway;
+    // AaveGateWay in Main net 0xdcd33426ba191383f1c9b431a342498fdac73488;
+    IWETHGateway public AaveWETHGateway;
+    // 1inch exchange in Main net 0x111111125434b319222cdbf8c261674adb56f3ae;
+    IOneInchExchange public LinchExchange;
     
-    constructor(MiniMeTokenFactory token, VotingSimpleFactory voting, ProjectSimpleFactory project, WETHGateway gateway) public {
+    constructor(MiniMeTokenFactory token, VotingSimpleFactory voting, ProjectSimpleFactory project, IWETHGateway gateway, IOneInchExchange exchange) public {
         TokenFactory = token;
         VotingFactory = voting;
         ProjectFactory = project;
         AaveWETHGateway = gateway;
+        LinchExchange = exchange;
     }
 
     function AddProject(Project.InitProjectProperty memory property) external returns (Project newProject) {

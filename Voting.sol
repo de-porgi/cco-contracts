@@ -5,7 +5,7 @@ pragma experimental ABIEncoderV2;
 
 import "./Project.sol";
 import "./Time.sol";
-import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
+import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
 
 /**
  * @title Voting

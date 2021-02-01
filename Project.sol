@@ -7,11 +7,11 @@ import "./Voting.sol";
 import "./Porgi.sol";
 import "./Time.sol";
 
-import "https://github.com/de-porgi/aave_v2/blob/main/contracts/misc/WETHGateway.sol";
+import "https://github.com/de-porgi/aave_v2/blob/main/contracts/misc/interfaces/IWETHGateway.sol";
 import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
 import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
-import "https://github.com/de-porgi/1inch/blob/main/contracts/OneInchExchange.sol";
+import "https://github.com/de-porgi/1inch/blob/main/contracts/IOneInchExchange.sol";
 
 /**
  * @title Project
@@ -129,8 +129,8 @@ contract Project is MiniMeToken, Time {
     NextSeason[] private NextSeasons;
 
     Porgi private _Porgi;
-    WETHGateway private _DepositManager;
-    OneInchExchange private _ExchangeManager;
+    IWETHGateway private _DepositManager;
+    IOneInchExchange private _ExchangeManager;
     VotingSimpleFactory private _VotingFactory;
     
     constructor (InitProjectProperty memory property, Porgi porgi)
@@ -168,19 +168,7 @@ contract Project is MiniMeToken, Time {
         season.Presale.Duration = Presale.Duration;
         season.ActiveSeries = -1;
 
-        uint8 totalPercent = 0;
-        for (uint8 j = 0; j < property.FirstSeason.Series.length; ++j) {
-            require(property.FirstSeason.Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
-            SeriesStruct storage series = FSeason.Series.push();
-            series.Duration = property.FirstSeason.Series[j].Duration;
-            series.StakeUnlock = property.FirstSeason.Series[j].StakeUnlock;
-            // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
-            if ((j + 1) != property.FirstSeason.Series.length || NextSeasons.length > 0) {
-                series.Vote = _VotingFactory.CreateVoting(this, property.FirstSeason.Series[j].Vote);
-            }
-            totalPercent += property.FirstSeason.Series[j].StakeUnlock;
-        }
-        require(totalPercent == 100, "Project: Total stake percent must be 100");
+        _processSeries(FSeason.Series, property.FirstSeason.Series, property.NextSeasons.length == 0);
         season.StakePercentsLeft = 100;
     }
 
@@ -196,22 +184,24 @@ contract Project is MiniMeToken, Time {
             season.Presale.TokensEmissionPercent = Presale.TokensEmissionPercent;
             season.Presale.EmissionsMade = 0;
             season.ActiveSeries = -1;
-
-            uint8 totalPercent = 0;
-            for (uint8 j = 0; j < property.NextSeasons[i].Series.length; ++j) {
-                require(property.NextSeasons[i].Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
-                SeriesStruct storage series = NextSeasons[i].Series.push();
-                series.Duration = property.NextSeasons[i].Series[j].Duration;
-                series.StakeUnlock = property.NextSeasons[i].Series[j].StakeUnlock;
-                // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
-                if ((j + 1) != property.NextSeasons[i].Series.length || i + 1 < NextSeasons.length) {
-                    series.Vote = _VotingFactory.CreateVoting(this, property.NextSeasons[i].Series[j].Vote);
-                }
-                totalPercent += property.NextSeasons[i].Series[j].StakeUnlock;
-            }
-            require(totalPercent == 100, "Project: Total stake percent must be 100");
             season.StakePercentsLeft = 100;
+            _processSeries(NextSeasons[i].Series, property.NextSeasons[i].Series, i + 1 == property.NextSeasons.length);
         }
+    }
+    
+    function _processSeries(SeriesStruct[] storage seriesArray, InitSeries[] memory initSeriesArray, bool lastSeason) private {
+        uint8 totalPercent = 0;
+        for (uint8 j = 0; j < initSeriesArray.length; ++j) {
+            require(initSeriesArray[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
+            SeriesStruct storage series = seriesArray.push();
+            series.Duration = initSeriesArray[j].Duration;
+            series.StakeUnlock = initSeriesArray[j].StakeUnlock;
+            if ((j + 1) != initSeriesArray.length || !lastSeason) {
+                series.Vote = _VotingFactory.CreateVoting(this, initSeriesArray[j].Vote);
+            }
+            totalPercent += initSeriesArray[j].StakeUnlock;
+        }
+        require(totalPercent == 100);
     }
     
     function StartPresale() external onlyOwner {
@@ -446,13 +436,13 @@ contract Project is MiniMeToken, Time {
 		TokenSecondaryPresale storage Presale = NextSeasons[uint8(ActiveSeason)].Presale;
 		uint256 tokensToMint = Presale.TokensAtStart.mul(Presale.TokensEmissionPercent).div(100).div(Presale.Emissions);
         if (oneInchCallData.length > 0) {
-            (IOneInchCaller caller, OneInchExchange.SwapDescription memory desc, IOneInchCaller.CallDescription[] memory calls) = abi
-      .decode(oneInchCallData[4:], (IOneInchCaller, OneInchExchange.SwapDescription, IOneInchCaller.CallDescription[]));
-            require(desc.srcReceiver == address(this), "Invalid srcReceiver");
-            require(desc.dstReceiver == address(this), "Invalid dstReceiver");
-            require(address(desc.srcToken) == address(this), "Invalid srcToken");
-            require(address(desc.dstToken) == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, "Invalid dstToken");
-            require(desc.amount == 0, "Invalid amount");
+            (IOneInchCaller caller, IOneInchExchange.SwapDescription memory desc, IOneInchCaller.CallDescription[] memory calls) = abi
+      .decode(oneInchCallData[4:], (IOneInchCaller, IOneInchExchange.SwapDescription, IOneInchCaller.CallDescription[]));
+            require(desc.srcReceiver == address(this));
+            require(desc.dstReceiver == address(this));
+            require(address(desc.srcToken) == address(this));
+            require(address(desc.dstToken) == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+            require(desc.amount == 0);
 			_mint(address(this), tokensToMint);
 			_approve(address(this), address(_ExchangeManager), tokensToMint);
             _ExchangeManager.swap(caller, desc, calls);
@@ -472,7 +462,7 @@ contract Project is MiniMeToken, Time {
         uint256 investorTokens = rate.mul(amount).div(1 ether);
         uint256 ownerPercent;
 		if (needTokens > 0) {
-			require(investorTokens > needTokens, "Not enough ETH for Emission");
+			require(investorTokens > needTokens);
 			if (investorTokens > needTokens) {
 				investorTokens = needTokens;
 			}
