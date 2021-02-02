@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0
-
 pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
@@ -13,8 +11,9 @@ import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/ope
 contract Voting is Time {
     using SafeMath for uint256;
     
-    modifier onlyProject { require(msg.sender == address(_Project), "Voting: Sender is not Project"); _; }
-    modifier onlyHolder { require(msg.sender == _Project.Owner() || _Project.balanceOf(msg.sender) > 0, "Voting: Sender is not holder"); _; }
+    modifier onlyProject { require(msg.sender == address(_Project), "Voting: Sender is not a Project"); _; }
+    modifier onlyHolder { require(msg.sender == _Project.Owner() || _Project.balanceOf(msg.sender) > 0, "Voting: Sender is not a holder"); _; }
+    modifier notFinished { require(Result == VoteResult.None, "Voting: Already is finished"); _; }
     
     uint8 constant PercentAbsolute = 1;
     uint8 constant PercentParticipant = 2;
@@ -62,22 +61,19 @@ contract Voting is Time {
         }
     }
     
-    function Start() external onlyHolder {
-        require(_Project.CurrentVoting() == this, "Voting: Is not current voting");
+    function Start() external onlyHolder notFinished {
+        require(_Project.ActiveVoting() == this, "Voting: Is not current voting");
         require(BlockStart == 0, "Voting: Already started");
-        require(Result == VoteResult.None, "Voting: Already has result");
         TimestampStart = getTimestamp64();
         BlockStart = block.number;
         TotalSupply = _Project.totalSupplyAt(BlockStart);
     }
     
-    function Cancel() external onlyProject {
-        require(Result == VoteResult.None, "Voting: Already has result");
+    function Cancel() external onlyProject notFinished {
         selfdestruct(address(_Project));
     }
     
-    function Finish() external onlyHolder {
-        require(Result == VoteResult.None, "Voting: Already has result");
+    function Finish() external onlyHolder notFinished {
         require(TimestampStart != 0, "Voting: Is not started");
         require(!IsOpen());
         
@@ -102,7 +98,7 @@ contract Voting is Time {
     }
     
     function Vote(VoteType t) external onlyHolder {
-        require(IsOpen(), "Voting: In progress");
+        require(IsOpen(), "Voting: Is not opened/started");
         require((t == VoteType.NO) || (t == VoteType.YES), "Voting: Unknown vote type");
         
         if (Votes[msg.sender] == VoteType.NONE) {

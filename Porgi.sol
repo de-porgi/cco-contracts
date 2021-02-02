@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0
-
 pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
@@ -78,10 +76,10 @@ contract Porgi {
     function _changeState(Project project, ProjectState newState) private {
         Statistic storage stat = _ProjectStatistic[project];
         require(stat.State != newState, "Porgi: state didn't change");
-        require(_IndexedProjectsByState[stat.State][stat.Index] == project, "Porgi: index mismatchs");
+        require(_IndexedProjectsByState[stat.State][stat.Index] == project, "Porgi: project index mismatch");
         
         if ((stat.Index + 1) != uint32(_IndexedProjectsByState[stat.State].length)) {
-            // If we don't last project, then let's swap with last project
+            // If the `project` is not last, let's swap it with last project.
             Project lastProject = _IndexedProjectsByState[stat.State][_IndexedProjectsByState[stat.State].length - 1];
             _IndexedProjectsByState[stat.State][stat.Index] = lastProject;
             _ProjectStatistic[lastProject].Index = stat.Index;
