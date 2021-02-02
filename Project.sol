@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0
-
 pragma solidity >=0.6.0;
 pragma experimental ABIEncoderV2;
 
@@ -7,9 +5,9 @@ import "./Voting.sol";
 import "./Porgi.sol";
 import "./Time.sol";
 
-import "https://github.com/aave/protocol-v2/blob/master/contracts/misc/WETHGateway.sol";
-import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
-import "https://github.com/aave/protocol-v2/blob/master/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
+import "https://github.com/de-porgi/aave_v2/blob/main/contracts/misc/WETHGateway.sol";
+import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
+import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/openzeppelin/contracts/SafeMath.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
 
 /**
@@ -20,8 +18,8 @@ contract Project is MiniMeToken, Time {
     using SafeMath for uint256;
 
     modifier onlyOwner { require(msg.sender == address(Owner), "Project: Sender is not owner"); _; }
-    modifier onlyHolder { require(msg.sender == Owner || balanceOf(msg.sender) > uint256(0), "Project: Sender is not holder"); _; }
-    modifier onlyCurrentVoting { require(msg.sender == address(CurrentVoting()), "Project: Sender is not current voting"); _; }
+    modifier onlyHolder { require(msg.sender == Owner || balanceOf(msg.sender) > uint256(0), "Project: Sender is not a holder"); _; }
+    modifier onlyActiveVoting { require(msg.sender == address(ActiveVoting()), "Project: Sender is not active voting"); _; }
 
     struct InitSeries {
         uint64 Duration;
@@ -76,7 +74,7 @@ contract Project is MiniMeToken, Time {
         SeriesStruct[] Series;
     }
 
-    enum InnerProjectState {
+    enum _ProjectState {
         Unknown,
         PresaleIsNotStarted,
         PresaleInProgress,
@@ -97,7 +95,7 @@ contract Project is MiniMeToken, Time {
     Season[] private Seasons;
 
     Porgi private _Porgi;
-    WETHGateway private _DepositManager;
+    IWETHGateway private _DepositManager;
     VotingSimpleFactory private _VotingFactory;
     
     constructor (InitProjectProperty memory property, Porgi porgi)
@@ -110,7 +108,7 @@ contract Project is MiniMeToken, Time {
             property.TokenSymbol,
             true /* _transfersEnabled */) public {
 
-        require(property.TokenDecimal >= 18, "Project: Decimal can't be lower than eth decimal");
+        require(property.TokenDecimal >= 18, "Project: ETH decimal(>=18)");
         require(property.Presale.TokenPrice >= 1 ether, "Project: Price lower than ether");
         
         ActiveSeason = 0;
@@ -123,45 +121,25 @@ contract Project is MiniMeToken, Time {
         changeController(address(this));
 
         for (uint8 i = 0; i < property.Seasons.length; ++i) {
-            require(property.Presale.OwnerTokensPercent < 100);
-            Season storage season = Seasons.push();
-            season.Presale.OwnerPercent = property.Presale.OwnerTokensPercent;
-            season.Presale.Price = property.Presale.TokenPrice;
-            season.Presale.Duration = property.Presale.Duration;
-            season.ActiveSeries = -1;
-    
-            uint8 totalPercent = 0;
-            for (uint8 j = 0; j < property.Seasons[i].Series.length; ++j) {
-                require(property.Seasons[i].Series[j].StakeUnlock <= 100, "Project: Stake unlock more 100");
-                SeriesStruct storage series = Seasons[i].Series.push();
-                series.Duration = property.Seasons[i].Series[j].Duration;
-                series.StakeUnlock = property.Seasons[i].Series[j].StakeUnlock;
-                // We don't need voting for the latest Series, because we have already unlocked all tokens for season=)
-                if ((j + 1) != property.Seasons[i].Series.length) {
-                    series.Vote = _VotingFactory.CreateVoting(this, property.Seasons[i].Series[j].Vote);
-                }
-                totalPercent += property.Seasons[i].Series[j].StakeUnlock;
-            }
-            require(totalPercent == 100, "Project: Total stake percent must be 100");
-            season.StakePercentsLeft = 100;
+            _addSeason(property.Presale, property.Seasons[i]);
         }
     }
     
     function StartPresale() external onlyOwner {
-        require(State() == InnerProjectState.PresaleIsNotStarted);
+        require(State() == _ProjectState.PresaleIsNotStarted);
         Seasons[ActiveSeason].Presale.Start = getTimestamp64();
         _Porgi.ChangeState(Porgi.ProjectState.Presale);
     }
 
     function FinishPresale() external onlyHolder {
-        require(State() == InnerProjectState.PresaleFinishing);
+        require(State() == _ProjectState.PresaleFinishing);
         _makeDeposit(address(this).balance);
         _startNextSeries();
         _unlockUnitsForCurrentSeries();
         _Porgi.ChangeState(Porgi.ProjectState.InProgress);
     }
 
-    function FinishSeries(Voting.VoteResult result) external onlyCurrentVoting {
+    function FinishSeries(Voting.VoteResult result) external onlyActiveVoting {
         if (result == Voting.VoteResult.Negative) {
             // Cleanup future votings, because project is canceled
             for (uint j = ActiveSeason; j < Seasons.length; ++j) {
@@ -177,12 +155,12 @@ contract Project is MiniMeToken, Time {
     }
 
     function StartNextSeason() external onlyOwner {
-        require(State() == InnerProjectState.SeasonFinishing);
+        require(State() == _ProjectState.SeasonFinishing);
         ActiveSeason = ActiveSeason + 1;
     }
 
     function WithdrawETH() external onlyHolder {
-        require(State() == InnerProjectState.ProjectCanceled, "Project: Is Not Canceled");
+        require(State() == _ProjectState.ProjectCanceled, "Project: Is Not Canceled");
         uint256 totalEth = GetETHBalance();
         uint256 totalSupply = totalSupply();
         uint256 senderTokens = balanceOf(msg.sender);
@@ -193,50 +171,50 @@ contract Project is MiniMeToken, Time {
         _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
-    function State() public view returns (InnerProjectState) {
+    function State() public view returns (_ProjectState) {
         if (Seasons[ActiveSeason].ActiveSeries < 0) {
             if (Seasons[ActiveSeason].Presale.Start == 0) {
-                return InnerProjectState.PresaleIsNotStarted;
+                return _ProjectState.PresaleIsNotStarted;
             } else if (getTimestamp64() < Seasons[ActiveSeason].Presale.Start + Seasons[ActiveSeason].Presale.Duration) {
-                return InnerProjectState.PresaleInProgress;
+                return _ProjectState.PresaleInProgress;
             } else {
-                return InnerProjectState.PresaleFinishing;
+                return _ProjectState.PresaleFinishing;
             }
         } else {
             SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
 
             if (getTimestamp64() < series.Start + series.Duration) {
-                return InnerProjectState.SeriesInProgress;
+                return _ProjectState.SeriesInProgress;
             } else if (uint8(Seasons[ActiveSeason].ActiveSeries + 1) == Seasons[ActiveSeason].Series.length /* last series in season */) {
                 if (ActiveSeason + 1 == Seasons.length /* last season */) {
-                    return InnerProjectState.ProjectFinished;
+                    return _ProjectState.ProjectFinished;
                 } else {
-                    return InnerProjectState.SeasonFinishing;
+                    return _ProjectState.SeasonFinishing;
                 }
             } else {
                 if (series.Vote.TimestampStart() == 0) {
-                    return InnerProjectState.SeriesFinishing;
+                    return _ProjectState.SeriesFinishing;
                 } else if (series.Vote.IsOpen()) {
-                    return InnerProjectState.NextSeriesVotingInProgress;
+                    return _ProjectState.NextSeriesVotingInProgress;
                 } else {
                     Voting.VoteResult result = series.Vote.Result();
 
                     if (result == Voting.VoteResult.None) {
-                        return InnerProjectState.NextSeriesVotingFinishing;
+                        return _ProjectState.NextSeriesVotingFinishing;
                     } else if (result == Voting.VoteResult.Negative) {
-                        return InnerProjectState.ProjectCanceled;
+                        return _ProjectState.ProjectCanceled;
                     } else {
-                        return InnerProjectState.Unknown;
+                        return _ProjectState.Unknown;
                     }
                 }
             }
         }
     }
 
-    function CurrentVoting() public view returns (Voting) {
-        if (State() == InnerProjectState.SeriesFinishing 
-         || State() == InnerProjectState.NextSeriesVotingInProgress 
-         || State() == InnerProjectState.NextSeriesVotingFinishing) {
+    function ActiveVoting() public view returns (Voting) {
+        if (State() == _ProjectState.SeriesFinishing 
+         || State() == _ProjectState.NextSeriesVotingInProgress 
+         || State() == _ProjectState.NextSeriesVotingFinishing) {
             return Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)].Vote;
         } else {
             return Voting(0);
@@ -258,7 +236,7 @@ contract Project is MiniMeToken, Time {
 
     receive() external payable {
         if (msg.sender != address(_DepositManager)) {
-            require(State() == InnerProjectState.PresaleInProgress, "Project: Presale not in progress");
+            require(State() == _ProjectState.PresaleInProgress, "Project: Presale not in progress");
             uint256 investorTokens = Seasons[ActiveSeason].Presale.Price.mul(msg.value).div(1 ether);
             uint256 ownerPercent = Seasons[ActiveSeason].Presale.OwnerPercent;
             uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
@@ -276,7 +254,7 @@ contract Project is MiniMeToken, Time {
         Seasons[ActiveSeason].ActiveSeries = Seasons[ActiveSeason].ActiveSeries + 1;
         SeriesStruct storage series = Seasons[ActiveSeason].Series[uint8(Seasons[ActiveSeason].ActiveSeries)];
         series.Start = getTimestamp64();
-        require(State() == InnerProjectState.SeriesInProgress);
+        require(State() == _ProjectState.SeriesInProgress);
         // We started latest series in project, so we can mark it as finished
         if (ActiveSeason + 1 == uint8(Seasons.length) && Seasons[ActiveSeason].ActiveSeries + 1 == int8(Seasons[ActiveSeason].Series.length)) {
             _Porgi.ChangeState(Porgi.ProjectState.Finished);
@@ -298,14 +276,41 @@ contract Project is MiniMeToken, Time {
 
     function _withdrawDeposit(uint256 amount) private {
         IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
-        // TODO: I think approve always returns tru, so this check is obvious
-        require(aWETH.approve(address(_DepositManager), amount), "Project: Not Enough aWETH to Withdraw");
+        aWETH.approve(address(_DepositManager), amount);
         _DepositManager.withdrawETH(amount, address(this));
     }
 
     function _safeTransferETH(address to, uint256 value) private {
         (bool success, ) = to.call{value: value}(new bytes(0));
         require(success);
+    }
+    
+    function _addSeason(InitPresale memory _presale, InitSeason memory _season) private {
+        require(_presale.OwnerTokensPercent < 100);		
+        Season storage season = Seasons.push();		
+        season.Presale.OwnerPercent = _presale.OwnerTokensPercent;		
+        season.Presale.Price = _presale.TokenPrice;		
+        season.Presale.Duration = _presale.Duration;		
+        season.ActiveSeries = -1;		
+        
+        uint8 totalPercent = 0;		
+        for (uint8 i = 0; i < _season.Series.length; ++i) {		
+            _addSeries(season, _season.Series[i], (i + 1) == _season.Series.length);	
+            totalPercent += _season.Series[i].StakeUnlock;		
+        }		
+        require(totalPercent == 100, "Project: total stake percent must be 100");		
+        season.StakePercentsLeft = 100;
+    }		
+
+    function _addSeries(Season storage _season, InitSeries memory _series, bool last) private {		
+        require(_series.StakeUnlock <= 100, "Project: Stake unlock more 100");
+        SeriesStruct storage series = _season.Series.push();		
+        series.Duration = _series.Duration;		
+        series.StakeUnlock = _series.StakeUnlock;		
+        // We don't need voting for the latest Series, because we have already unlocked all tokens for season	
+        if (!last) {		
+            series.Vote = _VotingFactory.CreateVoting(this, _series.Vote);		
+        }		
     }
 }
 
