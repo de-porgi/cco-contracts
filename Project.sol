@@ -153,9 +153,6 @@ contract Project is MiniMeToken, Time {
         _VotingFactory = porgi.VotingFactory();
         // Anyone can't controll this units TODO: Do we need permissions to controll units by Porgi?
         changeController(address(this));
-        _processFirstSeason(property);
-        _processNextSeasons(property);
-        _addFirstSeason(property.FirstSeason);
         _addFirstSeason(property.FirstSeason, property.NextSeasons.length == 0);
         for (uint8 i = 0; i < property.NextSeasons.length; ++i) {
             _addNextSeason(property.NextSeasons[i], i + 1 == property.NextSeasons.length);
@@ -410,7 +407,7 @@ contract Project is MiniMeToken, Time {
     }
 
     function Invest() public payable {
-        require(State() == InnerProjectState.PresaleInProgress && ActiveSeason == -1, "Project: Presale not in progress");
+        require(State() == _ProjectState.PresaleInProgress && ActiveSeason == -1, "Project: Presale not in progress");
         _invest(msg.sender, msg.value, 0);
     }
 
