@@ -248,12 +248,8 @@ contract Project is MiniMeToken, Time {
 
             if (getTimestamp64() < series.Start + series.Duration) {
                 return _ProjectState.SeriesInProgress;
-            } else if (uint8(_getActiveSeries() + 1) == _getActiveSeasonSeriesLength() /* last series in season */) {
-                if (uint8(ActiveSeason + 1) == NextSeasons.length /* last season */) {
-                    return _ProjectState.ProjectFinished;
-                } else {
-                    return _ProjectState.SeasonFinishing;
-                }
+            } else if (uint8(_getActiveSeries() + 1) == _getActiveSeasonSeriesLength() /* last series in season */ && uint8(ActiveSeason + 1) == NextSeasons.length) {
+                return _ProjectState.ProjectFinished;
             } else {
                 if (series.Vote.TimestampStart() == 0) {
                     return _ProjectState.SeriesFinishing;
@@ -263,7 +259,11 @@ contract Project is MiniMeToken, Time {
                     Voting.VoteResult result = series.Vote.Result();
 
                     if (result == Voting.VoteResult.None) {
-                        return _ProjectState.NextSeriesVotingFinishing;
+                        if (uint8(_getActiveSeries() + 1) == _getActiveSeasonSeriesLength()) {
+                            return _ProjectState.SeasonFinishing;
+                        } else {
+                            return _ProjectState.NextSeriesVotingFinishing;
+                        }
                     } else if (result == Voting.VoteResult.Negative) {
                         return _ProjectState.ProjectCanceled;
                     } else {
