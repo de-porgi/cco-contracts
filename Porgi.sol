@@ -42,8 +42,9 @@ contract Porgi {
         LinchExchange = exchange;
     }
 
-    function AddProject(Project.InitProjectProperty memory property) external returns (Project newProject) {
-        newProject = ProjectFactory.CreateProject(property, this);
+    function AddProject(Common.InitProjectProperty memory property) external returns (Project newProject) {
+        newProject = ProjectFactory.CreateProject(this);
+        newProject.Init(property);
         _Projects[msg.sender].push(newProject);
         if (_Projects[msg.sender].length == 1) {
             _ProjectsOwners.push(msg.sender);
