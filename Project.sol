@@ -122,8 +122,8 @@ contract Project is MiniMeToken, Time {
         }
     }
     
-    function GetProjectInfo() public view returns (address, string memory, string memory, string memory, uint8, int8, FirstSeason memory, NextSeason[] memory) {
-        return (Owner, ProjectName, name, symbol, decimals, ActiveSeason, FSeason, NextSeasons);
+    function GetProjectBaseInfo() public view returns (address, string memory, string memory, string memory, uint8, int8, Porgi.Statistic memory) {
+        return (Owner, ProjectName, name, symbol, decimals, ActiveSeason, _Porgi.GetProjectStatistic(this));
     }
 
     function StartPresale() external onlyOwner {
