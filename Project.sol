@@ -121,6 +121,10 @@ contract Project is MiniMeToken, Time {
             _addNextSeason(property.NextSeasons[i], i + 1 == property.NextSeasons.length);
         }
     }
+    
+    function GetProjectInfo() public view returns (address, string memory, string memory, string memory, uint8, int8, FirstSeason memory, NextSeason[] memory) {
+        return (Owner, ProjectName, name, symbol, decimals, ActiveSeason, FSeason, NextSeasons);
+    }
 
     function StartPresale() external onlyOwner {
         require(State() == _ProjectState.PresaleIsNotStarted);
