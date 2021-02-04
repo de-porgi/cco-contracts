@@ -134,7 +134,9 @@ contract Project is MiniMeToken, Time {
 
     function FinishPresale() external onlyHolder {
         require(State() == _ProjectState.PresaleFinishing);
-        _makeDeposit(address(this).balance);
+        if (address(this).balance > 0) {
+            _makeDeposit(address(this).balance);
+        }
         _startNextSeries();
         _unlockUnitsForCurrentSeries();
         _Porgi.ChangeState(Porgi.ProjectState.InProgress);
@@ -163,11 +165,14 @@ contract Project is MiniMeToken, Time {
             _startNextSeries();
             _unlockUnitsForCurrentSeries();
         }
+        else {
+            _startNextSeason();
+        }
     }
 
-    function StartNextSeason() external onlyOwner {
-        require(State() == _ProjectState.SeasonFinishing);
+    function _startNextSeason() private {
         ActiveSeason = ActiveSeason + 1;
+        NextSeasons[uint8(ActiveSeason)].Presale.TokensAtStart = totalSupply();
     }
 
     function WithdrawETH() external onlyHolder {
@@ -220,13 +225,8 @@ contract Project is MiniMeToken, Time {
                     return _ProjectState.NextSeriesVotingInProgress;
                 } else {
                     Common.VoteResult result = series.Vote.Result();
-
                     if (result == Common.VoteResult.None) {
-                        if (uint8(_getActiveSeries() + 1) == _getActiveSeasonSeriesLength()) {
-                            return _ProjectState.SeasonFinishing;
-                        } else {
-                            return _ProjectState.NextSeriesVotingFinishing;
-                        }
+                        return _ProjectState.NextSeriesVotingFinishing;
                     } else if (result == Common.VoteResult.Negative) {
                         return _ProjectState.ProjectCanceled;
                     } else {
@@ -348,10 +348,11 @@ contract Project is MiniMeToken, Time {
     function SellTokens(bytes calldata oneInchCallData) public payable {
         require(State() == _ProjectState.PresaleInProgress && ActiveSeason >= 0, "Project: Presale not in progress");
 		uint64 time = getTimestamp64();
-		require(NextSeasons[uint8(ActiveSeason)].Presale.EmissionsMade == 0 || NextSeasons[uint8(ActiveSeason)].Presale.TimeLastEmission + NextSeasons[uint8(ActiveSeason)].Presale.TimeBetweenEmissions < time);
-		NextSeasons[uint8(ActiveSeason)].Presale.TimeLastEmission = time;
-		TokenSecondaryPresale storage Presale = NextSeasons[uint8(ActiveSeason)].Presale;
-		uint256 tokensToMint = Presale.TokensAtStart.mul(Presale.TokensEmissionPercent).div(100).div(Presale.Emissions);
+		TokenSecondaryPresale storage presale = NextSeasons[uint8(ActiveSeason)].Presale;
+		require(presale.EmissionsMade == 0 || presale.TimeLastEmission + presale.TimeBetweenEmissions < time);
+		presale.TimeLastEmission = time;
+		presale.EmissionsMade += 1;
+		uint256 tokensToMint = presale.TokensAtStart.mul(presale.TokensEmissionPercent).div(100).div(presale.Emissions);
         if (oneInchCallData.length > 0) {
             (IOneInchCaller caller, IOneInchExchange.SwapDescription memory desc, IOneInchCaller.CallDescription[] memory calls) = abi
       .decode(oneInchCallData[4:], (IOneInchCaller, IOneInchExchange.SwapDescription, IOneInchCaller.CallDescription[]));
