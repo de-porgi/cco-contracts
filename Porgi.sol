@@ -3,12 +3,13 @@ pragma experimental ABIEncoderV2;
 
 import "./Voting.sol";
 import "./Project.sol";
+import "./Time.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
 
 /**
  * @title Porgi
  */
-contract Porgi {
+contract Porgi is Time {
     
     enum ProjectState { None, New, Presale, InProgress, Finished, Canceled }
     
@@ -17,6 +18,7 @@ contract Porgi {
     struct Statistic {
         ProjectState State;
         uint32 Index;
+        uint64 TimeCreated;
     }
     
     mapping(address => Project[]) private _Projects;
@@ -51,6 +53,7 @@ contract Porgi {
         }
         _ProjectStatistic[newProject].State = ProjectState.New;
         _ProjectStatistic[newProject].Index = uint32(_IndexedProjectsByState[ProjectState.New].length);
+        _ProjectStatistic[newProject].TimeCreated = getTimestamp64();
         _IndexedProjectsByState[ProjectState.New].push(newProject);
     }
     
