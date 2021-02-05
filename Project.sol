@@ -400,7 +400,7 @@ contract Project is MiniMeToken, Time {
     }
 
     function _addFirstSeason(Common.InitFirstSeason memory _season, bool lastSeason) private {
-        Common.InitFistPresale memory Presale = _season.Presale;
+        Common.InitFirstPresale memory Presale = _season.Presale;
         require(Presale.OwnerTokensPercent < 100);
         FirstSeason storage season = FSeason;
         season.Presale.OwnerPercent = Presale.OwnerTokensPercent;
