@@ -75,10 +75,10 @@ contract Voting is Time {
         }
         
         if (positive) {
-            _Project.FinishSeries(Common.VoteResult.Positive);
+            _Project.FinishVoting(Common.VoteResult.Positive);
             Result = Common.VoteResult.Positive;
         } else {
-            _Project.FinishSeries(Common.VoteResult.Negative);
+            _Project.FinishVoting(Common.VoteResult.Negative);
             Result = Common.VoteResult.Negative;
         }
     }

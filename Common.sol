@@ -31,6 +31,7 @@ contract Common {
     }
 
     struct InitNextSeason {
+        VoteProperty Vote;
         InitSecondaryPresale Presale;
         InitSeries[] Series;
     }
@@ -41,6 +42,7 @@ contract Common {
         // Percent of tokens which will be created for owner of the project during mint process
         uint8 OwnerTokensPercent;
         uint64 Duration;
+        uint256 MinCap;
     }
 
     struct InitSecondaryPresale {
@@ -56,6 +58,5 @@ contract Common {
         string TokenSymbol;
         uint8 TokenDecimal;
         InitFirstSeason FirstSeason;
-        InitNextSeason[] NextSeasons;
     }
 }
