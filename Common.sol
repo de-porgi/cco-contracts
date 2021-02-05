@@ -22,11 +22,11 @@ contract Common {
         // Percent of stake to unlock
         uint8 StakeUnlock;
         
-        Common.VoteProperty Vote;
+        VoteProperty Vote;
     }
     
     struct InitFirstSeason {
-        InitFistPresale Presale;
+        InitFirstPresale Presale;
         InitSeries[] Series;
     }
 
@@ -35,7 +35,7 @@ contract Common {
         InitSeries[] Series;
     }
 
-    struct InitFistPresale {
+    struct InitFirstPresale {
         // How many tokens for one ether TODO: Maybe add in future support of different currencies
         uint256 TokenPrice;
         // Percent of tokens which will be created for owner of the project during mint process
