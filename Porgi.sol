@@ -10,10 +10,19 @@ import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol
  * @title Porgi
  */
 contract Porgi is Time {
+    event ProjectCreated(Project indexed project, string projectName, string tokenName, string symbol, uint8 decimal, Project.FirstSeason season);
+    event StateUpdate(Project indexed project, ProjectState indexed state);
+    event ProjectUpdateNextSeason(Project indexed project, uint8 index, Project.NextSeason season);
+    event Invest(Project indexed project, address indexed investor, uint256 indexed ethAmount, uint256 projectTokenAmount);
+    event VotingCreated(Voting indexed project, Common.VoteProperty property);
+    event StartVoting(Voting indexed voting, uint64 timestamp, uint256 block, uint256 totalSupply);
+    event VoteRecord(Voting indexed voting, address indexed sender, Common.VoteType indexed t, uint256 amount);
+    event FinishVoting(Voting indexed voting, Common.VoteResult indexed result, uint256 totalYes, uint256 totalNo);
     
     enum ProjectState { None, New, Presale, InProgress, Finished, Canceled }
     
     modifier onlyChildProject { require(_ProjectStatistic[Project(msg.sender)].State != ProjectState.None, "Porgi: Not child project"); _; }
+    modifier onlyChildVoting { require(_ProjectStatistic[Voting(msg.sender).ParentProject()].State != ProjectState.None, "Porgi: Not child voting"); _; }
     
     struct Statistic {
         ProjectState State;
@@ -55,10 +64,44 @@ contract Porgi is Time {
         _ProjectStatistic[newProject].Index = uint32(_IndexedProjectsByState[ProjectState.New].length);
         _ProjectStatistic[newProject].TimeCreated = getTimestamp64();
         _IndexedProjectsByState[ProjectState.New].push(newProject);
+        
+        (Project.FirstSeason memory season, ) = newProject.GetSeasons();
+        emit ProjectCreated(newProject, property.ProjectName, property.TokenName, property.TokenSymbol, property.TokenDecimal, season);
+        
+        for (uint8 i = 0; i < season.Series.length - 1; ++i) {
+            emit VotingCreated(season.Series[i].Vote, season.Series[i].Vote.GetProperty());
+        }
+        emit StateUpdate(newProject, ProjectState.New);
     }
     
     function ChangeState(ProjectState state) external onlyChildProject {
         _changeState(Project(msg.sender), state);
+        emit StateUpdate(Project(msg.sender), state);
+    }
+    
+    function _AddNextSeason(uint8 index, Project.NextSeason calldata season) external onlyChildProject {
+        emit ProjectUpdateNextSeason(Project(msg.sender), index, season);
+        emit VotingCreated(season.Vote, season.Vote.GetProperty());
+        
+        for (uint8 i = 0; i < season.Series.length - 1; ++i) {
+            emit VotingCreated(season.Series[i].Vote, season.Series[i].Vote.GetProperty());
+        }
+    }
+    
+    function _Invest(address investor, uint256 ethAmount, uint256 projectTokenAmount) external onlyChildProject {
+        emit Invest(Project(msg.sender), investor, ethAmount, projectTokenAmount);
+    }
+    
+    function _StartVoting(uint64 timestamp, uint256 b, uint256 totalSupply) external onlyChildVoting {
+        emit StartVoting(Voting(msg.sender), timestamp, b, totalSupply);
+    }
+    
+    function _VoteRecord(address sender, Common.VoteType t, uint256 amount) external onlyChildVoting {
+        emit VoteRecord(Voting(msg.sender), sender, t, amount);
+    }
+    
+    function _FinishVoting(Common.VoteResult result, uint256 yes, uint256 no) external onlyChildVoting {
+        emit FinishVoting(Voting(msg.sender), result, yes, no);
     }
     
     function GetProjectsOwners() external view returns (address[] memory) {

@@ -12,8 +12,8 @@ import "https://github.com/de-porgi/aave_v2/blob/main/contracts/dependencies/ope
 contract Voting is Time {
     using SafeMath for uint256;
     
-    modifier onlyProject { require(msg.sender == address(_Project), "Voting: Sender is not a Project"); _; }
-    modifier onlyHolder { require(msg.sender == _Project.Owner() || _Project.balanceOf(msg.sender) > 0, "Voting: Sender is not a holder"); _; }
+    modifier onlyProject { require(msg.sender == address(ParentProject), "Voting: Sender is not a Project"); _; }
+    modifier onlyHolder { require(msg.sender == ParentProject.Owner() || ParentProject.balanceOf(msg.sender) > 0, "Voting: Sender is not a holder"); _; }
     modifier notFinished { require(Result == Common.VoteResult.None, "Voting: Already is finished"); _; }
     
     uint8 constant PercentAbsolute = 1;
@@ -40,11 +40,11 @@ contract Voting is Time {
     Common.VoteResult public Result;
     
     mapping(address => Common.VoteType) public Votes;
-    Project private _Project;
+    Project public ParentProject;
     Common.VoteProperty private _Property;
     
     constructor (Project prj, Common.VoteProperty memory property) public {
-        _Project = prj;
+        ParentProject = prj;
         _Property.Duration = property.Duration;
         require(property.Filters.length > 0, "Voting: Zero filters");
         uint8 temp = 0;
@@ -59,15 +59,16 @@ contract Voting is Time {
     }
     
     function Start() external onlyHolder notFinished {
-        require(_Project.ActiveVoting() == this, "Voting: Is not current voting");
+        require(ParentProject.ActiveVoting() == this, "Voting: Is not current voting");
         require(BlockStart == 0, "Voting: Already started");
         TimestampStart = getTimestamp64();
         BlockStart = block.number;
-        TotalSupply = _Project.totalSupplyAt(BlockStart);
+        TotalSupply = ParentProject.totalSupplyAt(BlockStart);
+        ParentProject._Porgi()._StartVoting(TimestampStart, BlockStart, TotalSupply);
     }
     
     function Cancel() external onlyProject notFinished {
-        selfdestruct(address(_Project));
+        selfdestruct(address(ParentProject));
     }
     
     function Finish() external onlyHolder notFinished {
@@ -86,35 +87,36 @@ contract Voting is Time {
         }
         
         if (positive) {
-            _Project.FinishVoting(Common.VoteResult.Positive);
+            ParentProject.FinishVoting(Common.VoteResult.Positive);
             Result = Common.VoteResult.Positive;
         } else {
-            _Project.FinishVoting(Common.VoteResult.Negative);
+            ParentProject.FinishVoting(Common.VoteResult.Negative);
             Result = Common.VoteResult.Negative;
         }
+        ParentProject._Porgi()._FinishVoting(Result, TotalYes, TotalNo);
     }
     
     function Vote(Common.VoteType t) external onlyHolder {
         require(IsOpen(), "Voting: Is not opened/started");
         require((t == Common.VoteType.NO) || (t == Common.VoteType.YES), "Voting: Unknown vote type");
+        uint balance = ParentProject.balanceOfAt(msg.sender, BlockStart);
         
         if (Votes[msg.sender] == Common.VoteType.NONE) {
             if (t == Common.VoteType.NO) {
-                TotalNo = TotalNo.add(_Project.balanceOfAt(msg.sender, BlockStart));
+                TotalNo = TotalNo.add(balance);
             } else {
-                TotalYes = TotalYes.add(_Project.balanceOfAt(msg.sender, BlockStart));
+                TotalYes = TotalYes.add(balance);
             }
         } else if (Votes[msg.sender] == Common.VoteType.NO && t == Common.VoteType.YES) {
-            uint balance = _Project.balanceOfAt(msg.sender, BlockStart);
             TotalNo = TotalNo.sub(balance, "Voting: vote amount exceeds total no");
             TotalYes = TotalYes.add(balance);
         } else if (Votes[msg.sender] == Common.VoteType.YES && t == Common.VoteType.NO)  {
-            uint balance = _Project.balanceOfAt(msg.sender, BlockStart);
             TotalNo = TotalNo.add(balance);
             TotalYes = TotalYes.sub(balance, "Voting: Vote amount exceeds total yes");
         }
         
         Votes[msg.sender] = t;
+        ParentProject._Porgi()._VoteRecord(msg.sender, t, balance);
     }
     
     function IsOpen() public view returns (bool) {

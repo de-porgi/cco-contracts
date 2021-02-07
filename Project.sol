@@ -89,7 +89,7 @@ contract Project is MiniMeToken, Time {
     NextSeason[] private NextSeasons;
     bool private canceled;
 
-    Porgi private _Porgi;
+    Porgi public _Porgi;
     IWETHGateway private _DepositManager;
     IOneInchExchange private _ExchangeManager;
     VotingSimpleFactory private _VotingFactory;
@@ -121,7 +121,17 @@ contract Project is MiniMeToken, Time {
         ActiveSeason = -1;
         ProjectName = property.ProjectName;
         Owner = tx.origin;
-        _addFirstSeason(property.FirstSeason);
+        Common.InitFirstPresale memory Presale = property.FirstSeason.Presale;
+        require(Presale.OwnerTokensPercent < 100);
+        FirstSeason storage season = FSeason;
+        season.Presale.OwnerPercent = Presale.OwnerTokensPercent;
+        season.Presale.Price = Presale.TokenPrice;
+        season.Presale.Duration = Presale.Duration;
+        season.Presale.MinCap = Presale.MinCap;
+        season.ActiveSeries = -1;
+
+        _addSeasonSeries(FSeason.Series, property.FirstSeason.Series);
+        season.StakePercentsLeft = 100;
     }
 
     function StartPresale() external onlyOwner {
@@ -211,7 +221,7 @@ contract Project is MiniMeToken, Time {
         _safeTransferETH(msg.sender, ETHToWithdraw);
     }
 
-    function AddNextSeasons(Common.InitNextSeason memory _season) external onlyOwner {
+    function AddNextSeason(Common.InitNextSeason memory _season) external onlyOwner {
         require(State() != _ProjectState.ProjectFinished && State() != _ProjectState.ProjectCanceled);
         Common.InitSecondaryPresale memory Presale = _season.Presale;
         require(Presale.OwnerTokensPercent < 100);
@@ -226,6 +236,7 @@ contract Project is MiniMeToken, Time {
         season.ActiveSeries = -1;
         season.StakePercentsLeft = 100;
         _addSeasonSeries(season.Series, _season.Series);
+        _Porgi._AddNextSeason(uint8(NextSeasons.length - 1), season);
     }
 
     function State() public view returns (_ProjectState) {
@@ -446,22 +457,9 @@ contract Project is MiniMeToken, Time {
         uint256 ownerTokens = investorTokens.mul(ownerPercent).div(100 - ownerPercent);
         _mint(investor, investorTokens);
         _mint(Owner, ownerTokens);
+        _Porgi._Invest(investor, amount, investorTokens);
     }
-
-    function _addFirstSeason(Common.InitFirstSeason memory _season) private {
-        Common.InitFirstPresale memory Presale = _season.Presale;
-        require(Presale.OwnerTokensPercent < 100);
-        FirstSeason storage season = FSeason;
-        season.Presale.OwnerPercent = Presale.OwnerTokensPercent;
-        season.Presale.Price = Presale.TokenPrice;
-        season.Presale.Duration = Presale.Duration;
-        season.Presale.MinCap = Presale.MinCap;
-        season.ActiveSeries = -1;
-
-        _addSeasonSeries(FSeason.Series, _season.Series);
-        season.StakePercentsLeft = 100;
-    }
-
+    
     function _addSeasonSeries(SeriesStruct[] storage seriesArray, Common.InitSeries[] memory initSeriesArray) private {
         uint8 totalPercent = 0;
         for (uint8 j = 0; j < initSeriesArray.length; ++j) {
@@ -474,7 +472,7 @@ contract Project is MiniMeToken, Time {
             }
             totalPercent += initSeriesArray[j].StakeUnlock;
         }
-        require(totalPercent == 100);
+        require(totalPercent == 100, "Project: Total percent is not");
     }
 }
 

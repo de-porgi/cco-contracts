@@ -24,17 +24,6 @@ contract Common {
         
         VoteProperty Vote;
     }
-    
-    struct InitFirstSeason {
-        InitFirstPresale Presale;
-        InitSeries[] Series;
-    }
-
-    struct InitNextSeason {
-        VoteProperty Vote;
-        InitSecondaryPresale Presale;
-        InitSeries[] Series;
-    }
 
     struct InitFirstPresale {
         // How many tokens for one ether TODO: Maybe add in future support of different currencies
@@ -50,6 +39,17 @@ contract Common {
         uint64 Emissions;
         uint8 OwnerTokensPercent;
         uint64 TimeBetweenEmissions;
+    }
+    
+    struct InitFirstSeason {
+        InitFirstPresale Presale;
+        InitSeries[] Series;
+    }
+
+    struct InitNextSeason {
+        VoteProperty Vote;
+        InitSecondaryPresale Presale;
+        InitSeries[] Series;
     }
 
     struct InitProjectProperty {
