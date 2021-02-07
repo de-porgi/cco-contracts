@@ -20,6 +20,17 @@ contract Voting is Time {
     uint8 constant PercentParticipant = 2;
     uint8 constant DifferenceOfVotes = 4;
     
+    struct VotingInfo {
+        uint64 TimestampStart;
+        uint256 BlockStart;
+    
+        uint256 TotalYes;
+        uint256 TotalNo;
+        uint256 TotalSupply;
+        Common.VoteResult Result;
+        Common.VoteProperty Property;
+    }
+    
     uint64 public TimestampStart;
     uint256 public BlockStart;
     
@@ -112,6 +123,16 @@ contract Voting is Time {
     
     function GetProperty() public view returns (Common.VoteProperty memory) {
         return _Property;
+    }
+    
+    function GetVotingInfo() external view returns (VotingInfo memory info) {
+        info.TimestampStart = TimestampStart;
+        info.BlockStart = BlockStart;
+        info.TotalYes = TotalYes;
+        info.TotalNo = TotalNo;
+        info.TotalSupply = TotalSupply;
+        info.Result = Result;
+        info.Property = _Property;
     }
 }
 

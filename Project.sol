@@ -122,13 +122,6 @@ contract Project is MiniMeToken, Time {
         ProjectName = property.ProjectName;
         Owner = tx.origin;
         _addFirstSeason(property.FirstSeason);
-        // for (uint8 i = 0; i < property.NextSeasons.length; ++i) {
-        //     _addNextSeason(property.NextSeasons[i], i + 1 == property.NextSeasons.length);
-        // }
-    }
-    
-    function GetProjectBaseInfo() public view returns (address, string memory, string memory, string memory, uint8, int8, uint256) {
-        return (Owner, ProjectName, name, symbol, decimals, ActiveSeason, FSeason.Presale.Price);
     }
 
     function StartPresale() external onlyOwner {
@@ -139,6 +132,11 @@ contract Project is MiniMeToken, Time {
             NextSeasons[uint8(ActiveSeason)].Presale.Start = getTimestamp64();
         }
         _Porgi.ChangeState(Porgi.ProjectState.Presale);
+    }
+
+    function Invest() external payable {
+        require(State() == _ProjectState.PresaleInProgress && ActiveSeason == -1, "Project: Presale not in progress");
+        _invest(msg.sender, msg.value, 0);
     }
 
     function FinishPresale() external onlyHolder {
@@ -155,27 +153,36 @@ contract Project is MiniMeToken, Time {
             _cancelProject();
         }
     }
-    
-    function _cancelProject() private {
-        // Cleanup future votings, because project is canceled
-        if (ActiveSeason == -1) {
-            for (uint8 i = uint8(FSeason.ActiveSeries + 1); i + 1 < FSeason.Series.length; ++i) {
-                FSeason.Series[i].Vote.Cancel();
-            }
+
+    function StartNextSeason() external onlyHolder {
+        require(State() == _ProjectState.SeasonFinishing);
+        ActiveSeason = ActiveSeason + 1;
+        NextSeasons[uint8(ActiveSeason)].Presale.TokensAtStart = totalSupply();
+    }
+
+    function SellTokens(bytes calldata oneInchCallData) external payable {
+        require(State() == _ProjectState.PresaleInProgress && ActiveSeason >= 0, "Project: Presale not in progress");
+		uint64 time = getTimestamp64();
+		TokenSecondaryPresale storage presale = NextSeasons[uint8(ActiveSeason)].Presale;
+		require(presale.EmissionsMade == 0 || presale.TimeLastEmission + presale.TimeBetweenEmissions < time);
+		presale.TimeLastEmission = time;
+		presale.EmissionsMade += 1;
+		uint256 tokensToMint = presale.TokensAtStart.mul(presale.TokensEmissionPercent).div(100).div(presale.Emissions);
+        if (oneInchCallData.length > 0) {
+            (IOneInchCaller caller, IOneInchExchange.SwapDescription memory desc, IOneInchCaller.CallDescription[] memory calls) = abi
+      .decode(oneInchCallData[4:], (IOneInchCaller, IOneInchExchange.SwapDescription, IOneInchCaller.CallDescription[]));
+            require(desc.srcReceiver == address(this));
+            require(desc.dstReceiver == address(this));
+            require(address(desc.srcToken) == address(this));
+            require(address(desc.dstToken) == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+            require(desc.amount == 0);
+			_mint(address(this), tokensToMint);
+			_approve(address(this), address(_ExchangeManager), tokensToMint);
+            _ExchangeManager.swap(caller, desc, calls);
         }
         else {
-            for (uint8 i = uint8(NextSeasons[uint8(ActiveSeason)].ActiveSeries + 1); i + 1 < NextSeasons[uint8(ActiveSeason)].Series.length; ++i) {
-                NextSeasons[uint8(ActiveSeason)].Series[i].Vote.Cancel();
-            }
+            _invest(msg.sender, msg.value, tokensToMint);
         }
-        for (uint j = uint8(ActiveSeason + 1); j < NextSeasons.length; ++j) {
-            NextSeasons[j].Vote.Cancel();
-            for (uint8 i = uint8(NextSeasons[j].ActiveSeries + 1); i + 1 < NextSeasons[j].Series.length; ++i) {
-                NextSeasons[j].Series[i].Vote.Cancel();
-            }
-        }
-        canceled = true;
-        _Porgi.ChangeState(Porgi.ProjectState.Canceled);
     }
 
     function FinishVoting (Common.VoteResult result) external onlyActiveVoting {
@@ -192,12 +199,6 @@ contract Project is MiniMeToken, Time {
         }
     }
 
-    function StartNextSeason() public onlyHolder {
-        require(State() == _ProjectState.SeasonFinishing);
-        ActiveSeason = ActiveSeason + 1;
-        NextSeasons[uint8(ActiveSeason)].Presale.TokensAtStart = totalSupply();
-    }
-
     function WithdrawETH() external onlyHolder {
         require(State() == _ProjectState.ProjectCanceled, "Project: Is Not Canceled");
         uint256 totalEth = GetETHBalance();
@@ -208,6 +209,23 @@ contract Project is MiniMeToken, Time {
         _burn(msg.sender, senderTokens);
         _withdrawDeposit(ETHToWithdraw);
         _safeTransferETH(msg.sender, ETHToWithdraw);
+    }
+
+    function AddNextSeasons(Common.InitNextSeason memory _season) external onlyOwner {
+        require(State() != _ProjectState.ProjectFinished && State() != _ProjectState.ProjectCanceled);
+        Common.InitSecondaryPresale memory Presale = _season.Presale;
+        require(Presale.OwnerTokensPercent < 100);
+        NextSeason storage season = NextSeasons.push();
+        season.Vote = _VotingFactory.CreateVoting(this, _season.Vote);
+        season.Presale.OwnerPercent = Presale.OwnerTokensPercent;
+        season.Presale.TimeBetweenEmissions = Presale.TimeBetweenEmissions;
+        season.Presale.Emissions = Presale.Emissions;
+        season.Presale.TimeLastEmission = 0;
+        season.Presale.TokensEmissionPercent = Presale.TokensEmissionPercent;
+        season.Presale.EmissionsMade = 0;
+        season.ActiveSeries = -1;
+        season.StakePercentsLeft = 100;
+        _addSeasonSeries(season.Series, _season.Series);
     }
 
     function State() public view returns (_ProjectState) {
@@ -278,22 +296,6 @@ contract Project is MiniMeToken, Time {
         }
     }
 
-    function _getActiveSeries() private view returns (int8){
-        if (ActiveSeason == -1) {
-            return FSeason.ActiveSeries;
-        } else {
-            return NextSeasons[uint8(ActiveSeason)].ActiveSeries;
-        }
-    }
-
-    function _getActiveSeasonSeriesLength() private view returns (uint256) {
-        if (ActiveSeason == -1) {
-            return FSeason.Series.length;
-        } else {
-            return NextSeasons[uint8(ActiveSeason)].Series.length;
-        }
-    }
-
     function ActiveVoting() public view returns (Voting) {
         if (State() == _ProjectState.SeriesFinishing
          || State() == _ProjectState.SeasonStarting
@@ -317,14 +319,10 @@ contract Project is MiniMeToken, Time {
     function GetSeasons() external view returns (FirstSeason memory, NextSeason[] memory) {
         return (FSeason, NextSeasons);
     }
-
-    // function GetNextSeasons() external view returns (NextSeason[] memory) {
-    //     return NextSeasons;
-    // }
-
-    // function GetNextSeason(uint8 season) external view returns (NextSeason memory) {
-    //     return NextSeasons[season];
-    // }
+    
+    function GetProjectBaseInfo() external view returns (address, string memory, string memory, string memory, uint8, int8, uint256) {
+        return (Owner, ProjectName, name, symbol, decimals, ActiveSeason, FSeason.Presale.Price);
+    }
 
     function GetETHBalance() public view returns (uint256) {
         IERC20 aWETH = IERC20(_DepositManager.getAWETHAddress());
@@ -334,6 +332,44 @@ contract Project is MiniMeToken, Time {
     receive() external payable {
         if (msg.sender != address(_DepositManager)) {
             _makeDeposit(msg.value);
+        }
+    }
+    
+    function _cancelProject() private {
+        // Cleanup future votings, because project is canceled
+        if (ActiveSeason == -1) {
+            for (uint8 i = uint8(FSeason.ActiveSeries + 1); i + 1 < FSeason.Series.length; ++i) {
+                FSeason.Series[i].Vote.Cancel();
+            }
+        }
+        else {
+            for (uint8 i = uint8(NextSeasons[uint8(ActiveSeason)].ActiveSeries + 1); i + 1 < NextSeasons[uint8(ActiveSeason)].Series.length; ++i) {
+                NextSeasons[uint8(ActiveSeason)].Series[i].Vote.Cancel();
+            }
+        }
+        for (uint j = uint8(ActiveSeason + 1); j < NextSeasons.length; ++j) {
+            NextSeasons[j].Vote.Cancel();
+            for (uint8 i = uint8(NextSeasons[j].ActiveSeries + 1); i + 1 < NextSeasons[j].Series.length; ++i) {
+                NextSeasons[j].Series[i].Vote.Cancel();
+            }
+        }
+        canceled = true;
+        _Porgi.ChangeState(Porgi.ProjectState.Canceled);
+    }
+
+    function _getActiveSeries() private view returns (int8){
+        if (ActiveSeason == -1) {
+            return FSeason.ActiveSeries;
+        } else {
+            return NextSeasons[uint8(ActiveSeason)].ActiveSeries;
+        }
+    }
+
+    function _getActiveSeasonSeriesLength() private view returns (uint256) {
+        if (ActiveSeason == -1) {
+            return FSeason.Series.length;
+        } else {
+            return NextSeasons[uint8(ActiveSeason)].Series.length;
         }
     }
 
@@ -392,36 +428,6 @@ contract Project is MiniMeToken, Time {
         require(success);
     }
 
-    function SellTokens(bytes calldata oneInchCallData) public payable {
-        require(State() == _ProjectState.PresaleInProgress && ActiveSeason >= 0, "Project: Presale not in progress");
-		uint64 time = getTimestamp64();
-		TokenSecondaryPresale storage presale = NextSeasons[uint8(ActiveSeason)].Presale;
-		require(presale.EmissionsMade == 0 || presale.TimeLastEmission + presale.TimeBetweenEmissions < time);
-		presale.TimeLastEmission = time;
-		presale.EmissionsMade += 1;
-		uint256 tokensToMint = presale.TokensAtStart.mul(presale.TokensEmissionPercent).div(100).div(presale.Emissions);
-        if (oneInchCallData.length > 0) {
-            (IOneInchCaller caller, IOneInchExchange.SwapDescription memory desc, IOneInchCaller.CallDescription[] memory calls) = abi
-      .decode(oneInchCallData[4:], (IOneInchCaller, IOneInchExchange.SwapDescription, IOneInchCaller.CallDescription[]));
-            require(desc.srcReceiver == address(this));
-            require(desc.dstReceiver == address(this));
-            require(address(desc.srcToken) == address(this));
-            require(address(desc.dstToken) == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-            require(desc.amount == 0);
-			_mint(address(this), tokensToMint);
-			_approve(address(this), address(_ExchangeManager), tokensToMint);
-            _ExchangeManager.swap(caller, desc, calls);
-        }
-        else {
-            _invest(msg.sender, msg.value, tokensToMint);
-        }
-    }
-
-    function Invest() public payable {
-        require(State() == _ProjectState.PresaleInProgress && ActiveSeason == -1, "Project: Presale not in progress");
-        _invest(msg.sender, msg.value, 0);
-    }
-
     function _invest(address investor, uint256 amount, uint256 needTokens) private {
         uint256 rate = FSeason.Presale.Price.div(uint8(ActiveSeason + 2));
         uint256 investorTokens = rate.mul(amount).div(1 ether);
@@ -454,23 +460,6 @@ contract Project is MiniMeToken, Time {
 
         _addSeasonSeries(FSeason.Series, _season.Series);
         season.StakePercentsLeft = 100;
-    }
-
-    function AddNextSeasons(Common.InitNextSeason memory _season) public onlyOwner {
-        require(State() != _ProjectState.ProjectFinished && State() != _ProjectState.ProjectCanceled);
-        Common.InitSecondaryPresale memory Presale = _season.Presale;
-        require(Presale.OwnerTokensPercent < 100);
-        NextSeason storage season = NextSeasons.push();
-        season.Vote = _VotingFactory.CreateVoting(this, _season.Vote);
-        season.Presale.OwnerPercent = _season.Presale.OwnerTokensPercent;
-        season.Presale.TimeBetweenEmissions = Presale.TimeBetweenEmissions;
-        season.Presale.Emissions = Presale.Emissions;
-        season.Presale.TimeLastEmission = 0;
-        season.Presale.TokensEmissionPercent = Presale.TokensEmissionPercent;
-        season.Presale.EmissionsMade = 0;
-        season.ActiveSeries = -1;
-        season.StakePercentsLeft = 100;
-        _addSeasonSeries(season.Series, _season.Series);
     }
 
     function _addSeasonSeries(SeriesStruct[] storage seriesArray, Common.InitSeries[] memory initSeriesArray) private {
