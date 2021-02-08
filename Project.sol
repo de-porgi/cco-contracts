@@ -81,7 +81,7 @@ contract Project is MiniMeToken, Time {
         ProjectCanceled
     }
     
-    string public ProjectName;
+    string private ProjectName;
     address public Owner;
 
     int8 private ActiveSeason;

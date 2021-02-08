@@ -10,11 +10,11 @@ import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol
  * @title Porgi
  */
 contract Porgi is Time {
-    event ProjectCreated(Project indexed project, string projectName, string tokenName, string symbol, uint8 decimal, Project.FirstSeason season);
+    event ProjectCreated(Project indexed project, address indexed owner, string projectName, string tokenName, string symbol, uint8 decimal, Project.FirstSeason season);
     event StateUpdate(Project indexed project, ProjectState indexed state);
     event ProjectUpdateNextSeason(Project indexed project, uint8 index, Project.NextSeason season);
     event Invest(Project indexed project, address indexed investor, uint256 indexed ethAmount, uint256 projectTokenAmount);
-    event VotingCreated(Voting indexed project, Common.VoteProperty property);
+    event VotingCreated(Voting indexed voting, Common.VoteProperty property);
     event StartVoting(Voting indexed voting, uint64 timestamp, uint256 block, uint256 totalSupply);
     event VoteRecord(Voting indexed voting, address indexed sender, Common.VoteType indexed t, uint256 amount);
     event FinishVoting(Voting indexed voting, Common.VoteResult indexed result, uint256 totalYes, uint256 totalNo);
@@ -66,7 +66,7 @@ contract Porgi is Time {
         _IndexedProjectsByState[ProjectState.New].push(newProject);
         
         (Project.FirstSeason memory season, ) = newProject.GetSeasons();
-        emit ProjectCreated(newProject, property.ProjectName, property.TokenName, property.TokenSymbol, property.TokenDecimal, season);
+        emit ProjectCreated(newProject, msg.sender, property.ProjectName, property.TokenName, property.TokenSymbol, property.TokenDecimal, season);
         
         for (uint8 i = 0; i < season.Series.length - 1; ++i) {
             emit VotingCreated(season.Series[i].Vote, season.Series[i].Vote.GetProperty());
