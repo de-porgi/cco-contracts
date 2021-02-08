@@ -3,12 +3,13 @@ pragma experimental ABIEncoderV2;
 
 import "./Voting.sol";
 import "./Project.sol";
+import "./Time.sol";
 import "https://github.com/de-porgi/minime/blob/master/contracts/MiniMeToken.sol";
 
 /**
  * @title Porgi
  */
-contract Porgi {
+contract Porgi is Time {
     
     enum ProjectState { None, New, Presale, InProgress, Finished, Canceled }
     
@@ -17,6 +18,7 @@ contract Porgi {
     struct Statistic {
         ProjectState State;
         uint32 Index;
+        uint64 TimeCreated;
     }
     
     mapping(address => Project[]) private _Projects;
@@ -29,23 +31,29 @@ contract Porgi {
     ProjectSimpleFactory public ProjectFactory;
     
     // AaveGateWay in Kovan testnet 0xf8aC10E65F2073460aAD5f28E1EABE807DC287CF;
+    // AaveGateWay in Main net 0xdcd33426ba191383f1c9b431a342498fdac73488;
     IWETHGateway public AaveWETHGateway;
+    // 1inch exchange in Main net 0x111111125434b319222cdbf8c261674adb56f3ae;
+    IOneInchExchange public LinchExchange;
     
-    constructor(MiniMeTokenFactory token, VotingSimpleFactory voting, ProjectSimpleFactory project, IWETHGateway gateway) public {
+    constructor(MiniMeTokenFactory token, VotingSimpleFactory voting, ProjectSimpleFactory project, IWETHGateway gateway, IOneInchExchange exchange) public {
         TokenFactory = token;
         VotingFactory = voting;
         ProjectFactory = project;
         AaveWETHGateway = gateway;
+        LinchExchange = exchange;
     }
 
-    function AddProject(Project.InitProjectProperty memory property) external returns (Project newProject) {
-        newProject = ProjectFactory.CreateProject(property, this);
+    function AddProject(Common.InitProjectProperty memory property) external returns (Project newProject) {
+        newProject = ProjectFactory.CreateProject(this);
+        newProject.Init(property);
         _Projects[msg.sender].push(newProject);
         if (_Projects[msg.sender].length == 1) {
             _ProjectsOwners.push(msg.sender);
         }
         _ProjectStatistic[newProject].State = ProjectState.New;
         _ProjectStatistic[newProject].Index = uint32(_IndexedProjectsByState[ProjectState.New].length);
+        _ProjectStatistic[newProject].TimeCreated = getTimestamp64();
         _IndexedProjectsByState[ProjectState.New].push(newProject);
     }
     
